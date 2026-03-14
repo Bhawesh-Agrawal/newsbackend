@@ -49,3 +49,20 @@ export const revokeAllUserTokens = async (userId) => {
     WHERE user_id = ${userId} AND revoked = FALSE
   `;
 };
+
+export const setRefreshTokenCookie = (res, refreshToken) => {
+  res.cookie('refreshToken', refreshToken, {
+    httpOnly: true,
+    secure:   process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge:   7 * 24 * 60 * 60 * 1000, // 7 days in ms
+  });
+};
+
+export const clearRefreshTokenCookie = (res) => {
+  res.clearCookie('refreshToken', {
+    httpOnly: true,
+    secure:   process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+  });
+};

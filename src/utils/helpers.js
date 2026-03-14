@@ -1,4 +1,5 @@
 import slugify from 'slugify';
+import crypto from 'crypto';
 
 export const generateSlug = (text) => {
   return slugify(text, {
@@ -30,4 +31,8 @@ export const parsePagination = (query = {}) => {
   const offset = (page - 1) * limit;
 
   return { page, limit, offset };
+};
+
+export const generateToken = (bytes = 32) => {
+  return crypto.randomBytes(bytes).toString('hex');
 };

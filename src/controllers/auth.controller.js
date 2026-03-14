@@ -7,7 +7,8 @@ import {
   verifyRefreshToken,
   hashToken,
   revokeAllUserTokens,
-  verifyAccessToken,
+  setRefreshTokenCookie,
+  clearRefreshTokenCookie,
 } from '../services/jwt.service.js';
 
 export const register = async (req, res, next) => {
@@ -111,18 +112,18 @@ export const login = async (req, res, next) => {
       WHERE id = ${user.id}
     `;
 
-    // 8. Send response
+    setRefreshTokenCookie(res, refreshToken);
+
     return res.status(200).json({
       success: true,
       message: 'Login successful',
       data: {
         accessToken,
-        refreshToken,
         user: {
-          id: user.id,
-          email: user.email,
+          id:        user.id,
+          email:     user.email,
           full_name: user.full_name,
-          role: user.role,
+          role:      user.role,
         },
       },
     });
@@ -154,31 +155,30 @@ export const getMe = async (req, res, next) => {
 
 export const refresh = async (req, res, next) => {
   try {
-    const { refreshToken } = req.body;
+    const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
 
-    if (!refreshToken){
+    if (!refreshToken) {
       return res.status(401).json({
-        success : false,
-        message : 'Refresh token required!!',
-      })
+        success: false,
+        message: 'Refresh token required',
+      });
     }
 
-    const decoded = verifyRefreshToken(refreshToken);
-
+    const decoded   = verifyRefreshToken(refreshToken);
     const tokenHash = hashToken(refreshToken);
 
     const tokens = await sql`
       SELECT * FROM refresh_tokens
       WHERE token_hash = ${tokenHash}
-      AND revoked = FALSE
-      AND expires_at > NOW()
+        AND revoked    = FALSE
+        AND expires_at > NOW()
     `;
 
-    if (tokens.length === 0){
+    if (tokens.length === 0) {
       return res.status(401).json({
-        success:false,
-        message: 'Refresh token Invalid or expired',
-      })
+        success: false,
+        message: 'Refresh token invalid or expired',
+      });
     }
 
     await sql`
@@ -187,9 +187,8 @@ export const refresh = async (req, res, next) => {
       WHERE token_hash = ${tokenHash}
     `;
 
-
-    const payload = { id: decoded.id, role: decoded.role};
-    const newAccessToken = signAccessToken(payload);
+    const payload         = { id: decoded.id, role: decoded.role };
+    const newAccessToken  = signAccessToken(payload);
     const newRefreshToken = signRefreshToken(payload);
 
     await saveRefreshToken(decoded.id, newRefreshToken, {
@@ -197,36 +196,36 @@ export const refresh = async (req, res, next) => {
       ipAddress: req.ip,
     });
 
-    return res.json({
-      success: true,
-      data : {
-        accessToken : newAccessToken,
-        refreshToken : newRefreshToken,
-      },
-    });
-
-
-  }catch(err){
-    if (err.name === 'TokenExpiredError' || err.name === 'JsonWebTokenError'){
-      return res.status(401).json({
-        success: false,
-        message : 'Invalid refresh token',
-      });
-    }
-
-    next(err);
-  }
-}
-
-export const logout = async (req, res, next) => {
-  try{
-    await revokeAllUserTokens(req.user.id);
+    setRefreshTokenCookie(res, newRefreshToken);
 
     return res.status(200).json({
-      success:true,
-      message : 'Logged out successfully',
-    })
-  }catch(err){
+      success: true,
+      data: { accessToken: newAccessToken },
+    });
+
+  } catch (err) {
+    if (err.name === 'TokenExpiredError' || err.name === 'JsonWebTokenError') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid refresh token',
+      });
+    }
+    next(err);
+  }
+};
+
+export const logout = async (req, res, next) => {
+  try {
+    await revokeAllUserTokens(req.user.id);
+
+    clearRefreshTokenCookie(res);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Logged out successfully',
+    });
+
+  } catch (err) {
     next(err);
   }
 };

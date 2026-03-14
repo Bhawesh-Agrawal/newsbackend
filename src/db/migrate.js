@@ -12,9 +12,7 @@ const runMigration = async () => {
     console.log('Running migrations...');
 
     const files = [
-      '001_users.sql',
-      '002_refresh_token.sql',
-      '003_articles.sql'
+      '005_newsletter.sql'
     ];
 
     for (const file of files) {
