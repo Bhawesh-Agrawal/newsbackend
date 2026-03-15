@@ -52,3 +52,16 @@ export const startScheduler = () => {
 
   console.log('[Scheduler] Background jobs started');
 };
+
+cron.schedule('0 3 * * *', async () => {
+  try {
+    await sql`
+      DELETE FROM magic_link_tokens
+      WHERE expires_at < NOW()
+         OR used_at IS NOT NULL
+    `;
+    console.log('[Scheduler] Cleaned magic link tokens');
+  } catch (err) {
+    console.error('[Scheduler] Magic link cleanup failed:', err.message);
+  }
+});

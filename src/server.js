@@ -13,6 +13,15 @@ import articlesRoutes   from './routes/articles.routes.js';
 import commentsRoutes   from './routes/comments.routes.js';
 import newsletterRoutes from './routes/newsletter.routes.js';
 import adminRoutes      from './routes/admin.routes.js';
+import uploadRoutes from './routes/upload.routes.js';
+
+import cors from 'cors';
+
+app.use(cors({
+  origin:      process.env.FRONTEND_URL,  // only your frontend domain
+  credentials: true,                       // required for cookies to work
+  methods:     ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+}));
 
 const app  = express();
 const PORT = process.env.PORT || 5000;
@@ -55,10 +64,65 @@ app.use(`${API}/articles`,   articlesRoutes);
 app.use(`${API}/comments`,   commentsRoutes);
 app.use(`${API}/newsletter`, newsletterRoutes);
 app.use(`${API}/admin`,      adminRoutes);
+app.use(`${API}/upload`, uploadRoutes);
 
 // ── 404 + error handling — always last ───────────────────────────
 app.use(notFound);
 app.use(errorHandler);
+
+
+//temp fix
+
+// Tags — simple CRUD
+app.get(`${API}/tags`, async (req, res) => {
+  const tags = await sql`
+    SELECT t.*, COUNT(at.article_id)::int AS article_count
+    FROM tags t
+    LEFT JOIN article_tags at ON t.id = at.article_id
+    GROUP BY t.id
+    ORDER BY t.name ASC
+  `;
+  res.json({ success: true, data: tags });
+});
+
+app.post(`${API}/tags`, authenticate, isEditor, async (req, res, next) => {
+  try {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ success: false, message: 'Name required' });
+    const slug = generateSlug(name);
+    const result = await sql`
+      INSERT INTO tags (name, slug) VALUES (${name}, ${slug})
+      ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
+      RETURNING *
+    `;
+    res.status(201).json({ success: true, data: result[0] });
+  } catch (err) { next(err); }
+});
+
+app.delete(`${API}/tags/:id`, authenticate, isSuperAdmin, async (req, res, next) => {
+  try {
+    await sql`DELETE FROM tags WHERE id = ${req.params.id}`;
+    res.json({ success: true, message: 'Tag deleted' });
+  } catch (err) { next(err); }
+});
+
+app.put(`${API}/categories/:id`, authenticate, isSuperAdmin, async (req, res, next) => {
+  try {
+    const { name, color, sort_order, is_active } = req.body;
+    const result = await sql`
+      UPDATE categories SET
+        name       = COALESCE(${name || null}, name),
+        color      = COALESCE(${color || null}, color),
+        sort_order = COALESCE(${sort_order ?? null}, sort_order),
+        is_active  = COALESCE(${is_active ?? null}, is_active)
+      WHERE id = ${req.params.id}
+      RETURNING *
+    `;
+    if (result.length === 0)
+      return res.status(404).json({ success: false, message: 'Category not found' });
+    res.json({ success: true, data: result[0] });
+  } catch (err) { next(err); }
+});
 
 // ── Start server ──────────────────────────────────────────────────
 const server = app.listen(PORT, () => {

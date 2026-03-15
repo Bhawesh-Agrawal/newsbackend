@@ -54,8 +54,11 @@ export const setRefreshTokenCookie = (res, refreshToken) => {
   res.cookie('refreshToken', refreshToken, {
     httpOnly: true,
     secure:   process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-    maxAge:   7 * 24 * 60 * 60 * 1000, // 7 days in ms
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+    domain:   process.env.NODE_ENV === 'production'
+                ? process.env.COOKIE_DOMAIN
+                : undefined,
+    maxAge:   7 * 24 * 60 * 60 * 1000,
   });
 };
 

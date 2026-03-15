@@ -8,6 +8,8 @@ import {
   updateUserRole,
   updateUserStatus,
   getAdminArticles,
+  getSettings,
+  updateSettings,
 } from '../controllers/admin.controller.js';
 import {
   authenticate,
@@ -29,5 +31,8 @@ router.get('/articles',           isEditor,     getAdminArticles);
 router.get('/users',              isSuperAdmin, getUsers);
 router.patch('/users/:id/role',   isSuperAdmin, updateUserRole);
 router.patch('/users/:id/status', isSuperAdmin, updateUserStatus);
+
+router.get('/settings',  isSuperAdmin, getSettings);
+router.patch('/settings', isSuperAdmin, updateSettings);
 
 export default router;

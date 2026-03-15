@@ -1,8 +1,9 @@
 import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 
 const createTransporter = () => {
     return nodemailer.createTransport({
-        host: process.env.SMtp_HOST,
+        host: process.env.SMTP_HOST,
         port: parseInt(process.env.SMTP_PORT),
         secure: process.env.SMTP_SECURE === 'true',
         auth:{
@@ -13,20 +14,20 @@ const createTransporter = () => {
 };
 
 const FROM = `"${process.env.EMAIL_FROM_NAME}" <${process.env.EMAIL_FROM}>`;
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-const sendEmail = async ({ to, subject, htlm, text }) => {
-    const transporter = createTransporter();
+const sendEmail = async ({ to, subject, html, text }) => {
+  const { data, error } = await resend.emails.send({
+    from:    `${process.env.EMAIL_FROM_NAME} <${process.env.EMAIL_FROM}>`,
+    to,
+    subject,
+    html,
+    text,
+  });
 
-    const info = await transporter.sendMail({
-        from : FROM,
-        to,
-        subject,
-        html,
-        text,
-    });
-
-    return info;
-}
+  if (error) throw new Error(error.message);
+  return data;
+};
 
 export const sendConfirmationEmail = async (email, name, token) => {
     const confirmMail = `$process.env.FRONTEND_URL}/confirm-email?token=${token}`;
@@ -94,4 +95,33 @@ export const sentCampaignEmail = async (subscriber, campaign) => {
         html, 
         text,
     });
+};
+
+export const sendMagicLinkEmail = async (email, name, token) => {
+  const loginUrl = `${process.env.FRONTEND_URL}/auth/magic?token=${token}`;
+
+  return sendEmail({
+    to: email,
+    subject: 'Your login link',
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: auto;">
+        <h2>Login to News Platform</h2>
+        <p>Hi${name ? ` ${name}` : ''}! Click the button below to sign in.
+           No password needed.</p>
+        <a href="${loginUrl}"
+           style="display: inline-block; padding: 12px 28px;
+                  background: #6366f1; color: white;
+                  border-radius: 6px; text-decoration: none;
+                  font-weight: 600; font-size: 15px;">
+          Sign In
+        </a>
+        <p style="color: #888; font-size: 12px; margin-top: 24px;">
+          This link expires in ${process.env.MAGIC_LINK_EXPIRES_MINUTES || 15} minutes
+          and can only be used once.<br/>
+          If you didn't request this, ignore this email — your account is safe.
+        </p>
+      </div>
+    `,
+    text: `Sign in to News Platform: ${loginUrl}\n\nExpires in ${process.env.MAGIC_LINK_EXPIRES_MINUTES || 15} minutes. Single use only.`,
+  });
 };

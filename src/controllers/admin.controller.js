@@ -191,3 +191,29 @@ export const getAdminArticles = async (req, res, next) => {
     next(err);
   }
 };
+
+// In admin.controller.js
+export const getSettings = async (req, res, next) => {
+  try {
+    const settings = await sql`SELECT key, value FROM site_settings ORDER BY key`;
+    const obj = Object.fromEntries(settings.map(s => [s.key, s.value]));
+    res.json({ success: true, data: obj });
+  } catch (err) { next(err); }
+};
+
+export const updateSettings = async (req, res, next) => {
+  try {
+    const updates = Object.entries(req.body);
+    for (const [key, value] of updates) {
+      await sql`
+        INSERT INTO site_settings (key, value, updated_by)
+        VALUES (${key}, ${String(value)}, ${req.user.id})
+        ON CONFLICT (key) DO UPDATE
+        SET value = EXCLUDED.value,
+            updated_by = EXCLUDED.updated_by,
+            updated_at = NOW()
+      `;
+    }
+    res.json({ success: true, message: 'Settings updated' });
+  } catch (err) { next(err); }
+};

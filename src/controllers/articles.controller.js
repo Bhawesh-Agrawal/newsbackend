@@ -7,6 +7,8 @@ import {
     parsePagination
 } from "../utils/helpers.js";
 
+import { generateSummary, generateTags } from '../services/ai.service.js';
+
 export const createArticle = async (req, res, next) => {
     try{
         const {
@@ -54,6 +56,47 @@ export const createArticle = async (req, res, next) => {
         )
         RETURNING *
         `;
+
+        if (status === 'published') {
+          (async () => {
+            try {
+              const summary = await generateSummary(body_text);
+
+              if (summary) {
+                await sql`
+                  UPDATE articles
+                  SET ai_summary = ${summary}
+                  WHERE id = ${articleId}
+                `;
+              }
+
+              // Auto-suggest tags if none were provided
+              if (!tag_ids || tag_ids.length === 0) {
+                const suggestedTags = await generateTags(title, body_text);
+
+                for (const tagName of suggestedTags) {
+                  const slug = generateSlug(tagName);
+
+                  // Insert tag if it doesn't exist
+                  const tag = await sql`
+                    INSERT INTO tags (name, slug)
+                    VALUES (${tagName}, ${slug})
+                    ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
+                    RETURNING id
+                  `;
+
+                  await sql`
+                    INSERT INTO article_tags (article_id, tag_id)
+                    VALUES (${articleId}, ${tag[0].id})
+                    ON CONFLICT DO NOTHING
+                  `;
+                }
+              }
+            } catch (err) {
+              console.error('[AI] Post-publish processing failed:', err.message);
+            }
+          })();
+        }
 
         const article = result[0];
 
@@ -266,6 +309,47 @@ export const updateArticle = async (req, res, next) => {
       RETURNING *
     `;
 
+    if (status === 'published') {
+        (async () => {
+          try {
+            const summary = await generateSummary(body_text);
+
+            if (summary) {
+              await sql`
+                UPDATE articles
+                SET ai_summary = ${summary}
+                WHERE id = ${articleId}
+              `;
+            }
+
+            // Auto-suggest tags if none were provided
+            if (!tag_ids || tag_ids.length === 0) {
+              const suggestedTags = await generateTags(title, body_text);
+
+              for (const tagName of suggestedTags) {
+                const slug = generateSlug(tagName);
+
+                // Insert tag if it doesn't exist
+                const tag = await sql`
+                  INSERT INTO tags (name, slug)
+                  VALUES (${tagName}, ${slug})
+                  ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
+                  RETURNING id
+                `;
+
+                await sql`
+                  INSERT INTO article_tags (article_id, tag_id)
+                  VALUES (${articleId}, ${tag[0].id})
+                  ON CONFLICT DO NOTHING
+                `;
+              }
+            }
+          } catch (err) {
+            console.error('[AI] Post-publish processing failed:', err.message);
+          }
+        })();
+      }
+
     // Replace tags if provided
     if (tag_ids !== undefined) {
       await sql`DELETE FROM article_tags WHERE article_id = ${id}`;
@@ -318,4 +402,76 @@ export const deleteArticle = async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+};
+
+export const getTrendingArticles = async (req, res, next) => {
+  try {
+    const { limit = 10, days = 7 } = req.query;
+
+    const articles = await sql`
+      SELECT
+        a.id, a.title, a.slug, a.cover_image,
+        a.view_count, a.like_count, a.comment_count,
+        a.published_at, a.reading_time,
+        u.full_name  AS author_name,
+        c.name       AS category_name,
+        c.color      AS category_color,
+        (
+          COUNT(av.id)          * 1.0 +
+          a.like_count          * 3.0 +
+          a.comment_count       * 2.0
+        ) AS trend_score
+      FROM articles a
+      LEFT JOIN article_views av
+        ON a.id = av.article_id
+        AND av.created_at >= NOW() - (${parseInt(days)} || ' days')::INTERVAL
+      LEFT JOIN users      u ON a.author_id   = u.id
+      LEFT JOIN categories c ON a.category_id = c.id
+      WHERE a.status = 'published'
+      GROUP BY a.id, u.id, c.id
+      ORDER BY trend_score DESC
+      LIMIT ${Math.min(50, parseInt(limit))}
+    `;
+
+    res.json({ success: true, data: articles });
+  } catch (err) { next(err);  }
+};
+
+export const getRelatedArticles = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const base = await sql`
+      SELECT search_vector, category_id FROM articles WHERE id = ${id}
+    `;
+    if (base.length === 0)
+      return res.status(404).json({ success: false, message: 'Article not found' });
+
+    const related = await sql`
+      SELECT
+        a.id, a.title, a.slug, a.cover_image,
+        a.reading_time, a.published_at,
+        u.full_name AS author_name,
+        c.name      AS category_name,
+        c.color     AS category_color,
+        ts_rank(a.search_vector, to_tsquery('english',
+          array_to_string(
+            ARRAY(SELECT word FROM ts_stat(
+              'SELECT search_vector FROM articles WHERE id = ' || quote_literal(${id})
+            ) ORDER BY ndoc DESC LIMIT 5),
+            ' | '
+          )
+        )) AS relevance
+      FROM articles a
+      JOIN users      u ON a.author_id   = u.id
+      JOIN categories c ON a.category_id = c.id
+      WHERE a.status    = 'published'
+        AND a.id       != ${id}
+        AND a.category_id = ${base[0].category_id}
+      ORDER BY relevance DESC, a.published_at DESC
+      LIMIT 6
+    `;
+
+    res.json({ success: true, data: related });
+  } catch (err) { next(err); }
 };
