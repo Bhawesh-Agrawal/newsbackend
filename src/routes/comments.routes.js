@@ -2,7 +2,7 @@ import { Router } from 'express';
 import {
   createComment, getComments, getCommentQueue,
   moderateComment, deleteComment,
-} from '../controllers/comments.controller.js';
+} from '../controllers/comment.controller.js';
 import { authenticate, isEditor } from '../middleware/auth.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 import {
