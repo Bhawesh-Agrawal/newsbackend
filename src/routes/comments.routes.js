@@ -8,7 +8,7 @@ import { validate } from '../middleware/validate.middleware.js';
 import {
   createCommentValidator,
   moderateCommentValidator,
-} from '../validators/comment.validators.js';
+} from '../validators/comment.validator.js';
 
 const router = Router();
 
