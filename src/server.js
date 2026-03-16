@@ -15,17 +15,20 @@ import newsletterRoutes from './routes/newsletter.routes.js';
 import adminRoutes      from './routes/admin.routes.js';
 import uploadRoutes from './routes/upload.routes.js';
 
+import { authenticate } from './middleware/auth.middleware.js';
+import { isEditor, isSuperAdmin, isAuthor } from './middleware/auth.middleware.js';
+
 import cors from 'cors';
+
+const app  = express();
+const PORT = process.env.PORT || 5000;
+const API  = '/api/v1';
 
 app.use(cors({
   origin:      process.env.FRONTEND_URL,  // only your frontend domain
   credentials: true,                       // required for cookies to work
   methods:     ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
 }));
-
-const app  = express();
-const PORT = process.env.PORT || 5000;
-const API  = '/api/v1';
 
 // ── Security headers ──────────────────────────────────────────────
 app.use(helmet());

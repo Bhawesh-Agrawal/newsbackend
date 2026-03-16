@@ -1,5 +1,5 @@
 import { Router }             from 'express';
-import { uploadArticleCover, uploadAvatar } from '../services/cloudinary.service.js';
+import { uploadArticleCover, uploadAvatar } from '../services/cloudinary.services.js';
 import { authenticate }       from '../middleware/auth.middleware.js';
 import { isAuthor }           from '../middleware/auth.middleware.js';
 

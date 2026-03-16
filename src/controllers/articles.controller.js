@@ -7,7 +7,7 @@ import {
     parsePagination
 } from "../utils/helpers.js";
 
-import { generateSummary, generateTags } from '../services/ai.service.js';
+import { generateSummary, generateTags } from '../services/ai.services.js';
 
 export const createArticle = async (req, res, next) => {
     try{

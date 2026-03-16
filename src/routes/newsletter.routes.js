@@ -5,7 +5,7 @@ import {
 } from '../controllers/newsletter.controller.js';
 import { optionalAuth, authenticate, isSuperAdmin } from '../middleware/auth.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
-import { subscribeValidator, campaignValidator } from '../validators/newsletter.validators.js';
+import { subscribeValidator, campaignValidator } from '../validators/newsletter.validator.js';
 import { newsletterLimiter } from '../middleware/ratelimit.middleware.js';
 
 const router = Router();

@@ -12,6 +12,7 @@ import {
 } from '../services/jwt.service.js';
 import { OAuth2Client }   from 'google-auth-library';
 import { sendMagicLinkEmail } from '../services/email.service.js';
+import { generateToken } from '../utils/helpers.js';
 
 export const register = async (req, res, next) => {
   try {
@@ -378,12 +379,19 @@ export const googleLogin = async (req, res, next) => {
 
 export const requestMagicLink = async (req, res, next) => {
   try {
-    const { email } = req.body;
+    const { email, full_name } = req.body;
 
     if (!email) {
       return res.status(400).json({
         success: false,
         message: 'Email is required',
+      });
+    }
+
+    if (!full_name) {
+      return res.status(400).json({
+        success: false,
+        message: 'Full Name is required',
       });
     }
 
@@ -399,9 +407,9 @@ export const requestMagicLink = async (req, res, next) => {
     if (users.length === 0) {
       const newUsers = await sql`
         INSERT INTO users
-          (email, role, status, auth_provider, email_verified)
+          (email, full_name, role, status, auth_provider, email_verified)
         VALUES
-          (${normalizedEmail}, 'reader', 'active', 'magic_link', FALSE)
+          (${normalizedEmail}, ${full_name}, 'reader', 'active', 'magic_link', FALSE)
         RETURNING *
       `;
       user = newUsers[0];
@@ -521,8 +529,8 @@ export const verifyMagicLink = async (req, res, next) => {
         last_login_at  = NOW(),
         login_count    = login_count + 1,
         auth_provider  = CASE
-          WHEN auth_provider = 'email' THEN 'email'
-          ELSE 'magic_link'
+          WHEN auth_provider = 'email'::auth_provider THEN 'email'::auth_provider
+          ELSE 'magic_link'::auth_provider
         END
       WHERE id = ${tokenRow.user_id}
     `;

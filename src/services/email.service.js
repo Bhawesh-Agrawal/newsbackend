@@ -74,7 +74,7 @@ export const sendUnsubscribeConfirmation = async (email) => {
     })
 };
 
-export const sentCampaignEmail = async (subscriber, campaign) => {
+export const sendCampaignEmail = async (subscriber, campaign) => {
     const unsubUrl = `${process.env.FRONTEND_URL}/newsletter/unsubscribe?token=${subscriber.unsubscribe_token}`;
 
     const html = `

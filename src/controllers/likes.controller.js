@@ -6,6 +6,7 @@ export const toggleLike = async (req, res, next) => {
     const { fingerprint }    = req.body;
 
     const userId = req.user?.id || null;
+    console.log('toggleLike called:', { article_id, userId, fingerprint })
 
     // Must have either a user ID or a fingerprint
     if (!userId && !fingerprint) {
