@@ -10,7 +10,7 @@ import { validate } from '../middleware/validate.middleware.js';
 import {
   createArticleValidator,
   updateArticleValidator,
-} from '../validators/article.validators.js';
+} from '../validators/article.validator.js';
 
 const router = Router();
 
