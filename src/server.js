@@ -109,21 +109,100 @@ app.delete(`${API}/tags/:id`, authenticate, isSuperAdmin, async (req, res, next)
   } catch (err) { next(err); }
 });
 
+app.get(`${API}/categories`, async (req, res, next) => {
+  try {
+    const categories = await sql`
+      SELECT
+        id, name, slug, color, sort_order, is_active,
+        (
+          SELECT COUNT(*)::int
+          FROM articles
+          WHERE category_id = categories.id
+            AND status = 'published'
+        ) AS article_count
+      FROM categories
+      WHERE is_active = TRUE
+      ORDER BY sort_order ASC, name ASC
+    `;
+    res.json({ success: true, data: categories });
+  } catch (err) { next(err); }
+});
+
+// POST create category (super_admin only)
+app.post(`${API}/categories`, authenticate, isSuperAdmin, async (req, res, next) => {
+  try {
+    const { name, color = '#6366f1', sort_order = 0, description } = req.body;
+
+    if (!name) {
+      return res.status(400).json({ success: false, message: 'Name is required' });
+    }
+
+    // Generate slug from name
+    const slug = name.toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-');
+
+    const result = await sql`
+      INSERT INTO categories (name, slug, color, sort_order, is_active)
+      VALUES (${name}, ${slug}, ${color}, ${sort_order}, TRUE)
+      RETURNING *
+    `;
+
+    res.status(201).json({ success: true, data: result[0] });
+  } catch (err) {
+    // Duplicate name/slug
+    if (err.code === '23505') {
+      return res.status(409).json({
+        success: false,
+        message: 'A category with this name already exists'
+      });
+    }
+    next(err);
+  }
+});
+
+// PUT update category (super_admin only)
 app.put(`${API}/categories/:id`, authenticate, isSuperAdmin, async (req, res, next) => {
   try {
     const { name, color, sort_order, is_active } = req.body;
     const result = await sql`
       UPDATE categories SET
-        name       = COALESCE(${name || null}, name),
-        color      = COALESCE(${color || null}, color),
+        name       = COALESCE(${name       || null}, name),
+        color      = COALESCE(${color      || null}, color),
         sort_order = COALESCE(${sort_order ?? null}, sort_order),
-        is_active  = COALESCE(${is_active ?? null}, is_active)
+        is_active  = COALESCE(${is_active  ?? null}, is_active)
       WHERE id = ${req.params.id}
       RETURNING *
     `;
     if (result.length === 0)
       return res.status(404).json({ success: false, message: 'Category not found' });
     res.json({ success: true, data: result[0] });
+  } catch (err) { next(err); }
+});
+
+// DELETE category (super_admin only)
+app.delete(`${API}/categories/:id`, authenticate, isSuperAdmin, async (req, res, next) => {
+  try {
+    // Block if articles exist in this category
+    const articleCheck = await sql`
+      SELECT COUNT(*)::int AS count
+      FROM articles WHERE category_id = ${req.params.id}
+    `;
+    if (articleCheck[0].count > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete — ${articleCheck[0].count} articles are assigned to this category. Reassign them first.`
+      });
+    }
+
+    const result = await sql`
+      DELETE FROM categories WHERE id = ${req.params.id} RETURNING id, name
+    `;
+    if (result.length === 0)
+      return res.status(404).json({ success: false, message: 'Category not found' });
+
+    res.json({ success: true, message: `Category "${result[0].name}" deleted` });
   } catch (err) { next(err); }
 });
 
