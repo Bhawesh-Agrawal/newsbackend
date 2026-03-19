@@ -24,10 +24,26 @@ const app  = express();
 const PORT = process.env.PORT || 5000;
 const API  = '/api/v1';
 
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "https://dev.gallitify.tech",
+  "https://gallitify.tech"
+];
+
 app.use(cors({
-  origin:      process.env.FRONTEND_URL,  // only your frontend domain
-  credentials: true,                       // required for cookies to work
-  methods:     ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+  origin: function (origin, callback) {
+    // allow requests with no origin (like Postman, curl)
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    } else {
+      return callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
 }));
 
 // ── Security headers ──────────────────────────────────────────────
