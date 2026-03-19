@@ -86,8 +86,7 @@ app.use(`${API}/admin`,      adminRoutes);
 app.use(`${API}/upload`, uploadRoutes);
 
 // ── 404 + error handling — always last ───────────────────────────
-app.use(notFound);
-app.use(errorHandler);
+
 
 
 //temp fix
@@ -222,6 +221,10 @@ app.delete(`${API}/categories/:id`, authenticate, isSuperAdmin, async (req, res,
   } catch (err) { next(err); }
 });
 
+
+app.use(notFound);
+app.use(errorHandler);
+
 // ── Start server ──────────────────────────────────────────────────
 const server = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
@@ -254,6 +257,7 @@ const shutdown = async (signal) => {
     process.exit(1);
   }, 10000);
 };
+
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT',  () => shutdown('SIGINT'));
