@@ -30,7 +30,7 @@ const sendEmail = async ({ to, subject, html, text }) => {
 };
 
 export const sendConfirmationEmail = async (email, name, token) => {
-    const confirmMail = `$process.env.FRONTEND_URL}/confirm-email?token=${token}`;
+    const confirmUrl = `$process.env.FRONTEND_URL}/confirm-email?token=${token}`;
 
     return sendEmail({
         to : email,
