@@ -1,30 +1,65 @@
 import { Router } from 'express';
+import { body }   from 'express-validator';
+
+// ── Controllers ───────────────────────────────────────────────
 import {
-  register, login, getMe, refresh, logout,
-  googleLogin,
-  requestMagicLink, verifyMagicLink,
+  register,
+  verifyEmail,        // ← was missing entirely
+  login,
+  googleAuth,         // ← your file had 'googleLogin' — wrong name
+  requestMagicLink,
+  verifyMagicLink,
+  refresh,      // ← your file had 'refresh' — wrong name
+  logout,
+  getMe,
 } from '../controllers/auth.controller.js';
-import { authenticate }              from '../middleware/auth.middleware.js';
-import { validate }                  from '../middleware/validate.middleware.js';
-import { authLimiter }               from '../middleware/ratelimit.middleware.js';
+
+// ── Middleware ────────────────────────────────────────────────
+import { authenticate }                      from '../middleware/auth.middleware.js';
+import { validate }                          from '../middleware/validate.middleware.js';
+import { authLimiter }                       from '../middleware/ratelimit.middleware.js';
+import { verifyTurnstile }                   from '../middleware/turnstile.middleware.js';
 import { registerValidator, loginValidator } from '../validators/auth.validators.js';
-import { body } from 'express-validator';
 
 const router = Router();
 
-// Email auth
-router.post('/register', authLimiter, registerValidator, validate, register);
-router.post('/login',    authLimiter, loginValidator,    validate, login);
+// ── Register ─────────────────────────────────────────────────
+// Turnstile runs BEFORE validators so bots are rejected cheaply
+router.post('/register',
+  authLimiter,
+  verifyTurnstile,
+  registerValidator,
+  validate,
+  register
+);
 
-// Google OAuth
+// ── Verify email (link from registration email) ───────────────
+// No rate limit needed — token is single-use and 24hr expiry
+router.post('/verify-email',
+  body('token').notEmpty().withMessage('Verification token required'),
+  validate,
+  verifyEmail
+);
+
+// ── Login ─────────────────────────────────────────────────────
+router.post('/login',
+  authLimiter,
+  verifyTurnstile,
+  loginValidator,
+  validate,
+  login
+);
+
+// ── Google OAuth ──────────────────────────────────────────────
+// No Turnstile — Google already verifies the user isn't a bot
 router.post('/google',
   authLimiter,
   body('id_token').notEmpty().withMessage('Google ID token required'),
   validate,
-  googleLogin
+  googleAuth          // ← correct name from controller
 );
 
-// Magic link
+// ── Magic link ────────────────────────────────────────────────
 router.post('/magic-link/request',
   authLimiter,
   body('email').isEmail().withMessage('Valid email required').normalizeEmail(),
@@ -33,15 +68,14 @@ router.post('/magic-link/request',
 );
 
 router.post('/magic-link/verify',
-  authLimiter,
   body('token').notEmpty().withMessage('Token required'),
   validate,
   verifyMagicLink
 );
 
-// Token management
-router.post('/refresh',  authLimiter, refresh);
-router.post('/logout',   authenticate, logout);
-router.get('/me',        authenticate, getMe);
+// ── Token management ──────────────────────────────────────────
+router.post('/refresh', refresh);   // ← correct name from controller
+router.post('/logout',  authenticate, logout);
+router.get('/me',       authenticate, getMe);
 
 export default router;

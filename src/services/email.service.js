@@ -30,7 +30,7 @@ const sendEmail = async ({ to, subject, html, text }) => {
 };
 
 export const sendConfirmationEmail = async (email, name, token) => {
-    const confirmUrl = `$process.env.FRONTEND_URL}/confirm-email?token=${token}`;
+    const confirmUrl = `${process.env.FRONTEND_URL}/confirm-email?token=${token}`;
 
     return sendEmail({
         to : email,
@@ -123,5 +123,45 @@ export const sendMagicLinkEmail = async (email, name, token) => {
       </div>
     `,
     text: `Sign in to News Platform: ${loginUrl}\n\nExpires in ${process.env.MAGIC_LINK_EXPIRES_MINUTES || 15} minutes. Single use only.`,
+  });
+};
+
+export const sendEmailVerification = async (email, fullName, token) => {
+  const url = `${process.env.FRONTEND_URL}/auth/verify-email?token=${token}`;
+
+  return send({
+    to:      email,
+    subject: 'Verify your Mango People News account',
+    html: `
+      <div style="font-family:sans-serif;max-width:520px;margin:auto;padding:32px 24px">
+        <div style="margin-bottom:24px">
+          <span style="font-size:28px">🌳</span>
+          <strong style="font-size:18px;margin-left:8px;vertical-align:middle">
+            Mango People News
+          </strong>
+        </div>
+
+        <h2 style="font-size:22px;font-weight:800;margin:0 0 8px">
+          Welcome, ${fullName}!
+        </h2>
+        <p style="color:#555;margin:0 0 24px;line-height:1.6">
+          You're almost there. Click the button below to verify your email
+          and activate your account. This link expires in <strong>24 hours</strong>.
+        </p>
+
+        <a href="${url}"
+           style="display:inline-block;padding:14px 28px;
+                  background:#E8A020;color:#fff;border-radius:8px;
+                  text-decoration:none;font-weight:700;font-size:15px">
+          Verify Email Address
+        </a>
+
+        <p style="color:#888;font-size:12px;margin-top:32px;line-height:1.6">
+          If you didn't create this account, you can safely ignore this email.<br/>
+          Or copy this link: <a href="${url}" style="color:#E8A020">${url}</a>
+        </p>
+      </div>
+    `,
+    text: `Welcome to Mango People News!\n\nVerify your email here:\n${url}\n\nThis link expires in 24 hours.`,
   });
 };
