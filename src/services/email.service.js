@@ -129,7 +129,7 @@ export const sendMagicLinkEmail = async (email, name, token) => {
 export const sendEmailVerification = async (email, fullName, token) => {
   const url = `${process.env.FRONTEND_URL}/auth/verify-email?token=${token}`;
 
-  return send({
+  return sendEmail({
     to:      email,
     subject: 'Verify your Mango People News account',
     html: `
