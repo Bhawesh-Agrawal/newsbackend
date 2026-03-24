@@ -47,7 +47,34 @@ app.use(cors({
 }));
 
 // ── Security headers ──────────────────────────────────────────────
-app.use(helmet());
+app.use(helmet({
+  crossOriginEmbedderPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc:     ["'self'"],
+      scriptSrc:      [
+        "'self'",
+        "'unsafe-inline'",          // needed for Vite dev
+        'https://accounts.google.com',
+        'https://challenges.cloudflare.com',
+      ],
+      frameSrc:       [
+        'https://challenges.cloudflare.com',  // Turnstile iframe
+        'https://accounts.google.com',        // Google One Tap iframe
+      ],
+      connectSrc:     [
+        "'self'",
+        'https://accounts.google.com',
+        'https://challenges.cloudflare.com',
+      ],
+      imgSrc:         ["'self'", 'data:', 'https:'],
+      styleSrc:       ["'self'", "'unsafe-inline'"],
+      fontSrc:        ["'self'", 'https:', 'data:'],
+      objectSrc:      ["'none'"],
+      frameAncestors: ["'none'"],
+    },
+  },
+}))
 
 // ── Trust proxy ───────────────────────────────────────────────────
 // Required when deployed behind Nginx, Railway, Render etc.

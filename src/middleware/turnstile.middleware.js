@@ -5,13 +5,12 @@
 
 export const verifyTurnstile = async (req, res, next) => {
   const secretKey = process.env.TURNSTILE_SECRET_KEY
-
-  // No secret configured — skip silently (local dev without Turnstile)
   if (!secretKey) return next()
 
   const token = req.body['cf-turnstile-response']
 
   if (!token) {
+    console.log('[Turnstile] No token in request body. Keys present:', Object.keys(req.body))
     return res.status(400).json({
       success: false,
       message: 'Security check required. Please complete the verification.',
@@ -34,26 +33,21 @@ export const verifyTurnstile = async (req, res, next) => {
     )
 
     const result = await response.json()
+    console.log('[Turnstile] Verification result:', result)
 
     if (!result.success) {
       return res.status(400).json({
         success: false,
         message: 'Security verification failed. Please try again.',
-        // Only expose Cloudflare error codes in development for debugging
-        ...(process.env.NODE_ENV !== 'production' && {
-          errors: result['error-codes'],
-        }),
+        ...(process.env.NODE_ENV !== 'production' && { errors: result['error-codes'] }),
       })
     }
 
     next()
   } catch (err) {
-    // If Cloudflare is unreachable, fail open in production
-    // so a Cloudflare outage doesn't lock everyone out
-    console.error('[Turnstile] Verification failed:', err.message)
-
+    console.error('[Turnstile] Fetch failed:', err.message)
     if (process.env.NODE_ENV === 'production') {
-      next() // fail open
+      next()
     } else {
       return res.status(503).json({
         success: false,
