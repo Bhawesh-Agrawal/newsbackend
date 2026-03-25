@@ -2,51 +2,56 @@ import sql from '../config/database.js';
 
 export const trackView = async (req, res, next) => {
   try {
-    const { id: article_id } = req.params;
-    const { session_id }     = req.body;
-    const userId = req.user?.id || null;
+    const { id } = req.params;
 
-    // Check if this session already viewed this article
-    if (session_id) {
-      const existing = await sql`
-        SELECT id FROM article_views
-        WHERE article_id = ${article_id}
-          AND session_id = ${session_id}
-      `;
+    // req.body may be undefined if no body was sent — default to empty object
+    const { session_id } = req.body || {};
 
-      if (existing.length > 0) {
-        // Already counted this session — return silently
-        return res.status(200).json({
-          success: true,
-          data: { counted: false },
-        });
-      }
+    const userId    = req.user?.id    || null;
+    const ipAddress = req.ip          || null;
+    const userAgent = req.headers['user-agent'] || null;
+
+    // Deduplicate: same user/IP + article within 24 hours counts as 1 view
+    const existing = await sql`
+      SELECT id FROM article_views
+      WHERE article_id = ${id}
+        AND (
+          (user_id    IS NOT NULL AND user_id    = ${userId})
+          OR
+          (ip_address IS NOT NULL AND ip_address = ${ipAddress}::inet)
+        )
+        AND created_at > NOW() - INTERVAL '24 hours'
+      LIMIT 1
+    `;
+
+    if (existing.length > 0) {
+      return res.status(200).json({ success: true, message: 'Already counted' });
     }
 
-    // Log the view
     await sql`
-      INSERT INTO article_views (article_id, user_id, session_id, ip_address, referrer)
+      INSERT INTO article_views
+        (article_id, user_id, session_id, ip_address, user_agent)
       VALUES (
-        ${article_id},
+        ${id},
         ${userId},
         ${session_id || null},
-        ${req.ip},
-        ${req.headers.referer || null}
+        ${ipAddress ? sql`${ipAddress}::inet` : null},
+        ${userAgent}
       )
     `;
 
-    // Increment counter
+    // Increment the cached view count on the article
     await sql`
-      UPDATE articles SET view_count = view_count + 1
-      WHERE id = ${article_id}
+      UPDATE articles
+      SET view_count = view_count + 1
+      WHERE id = ${id}
     `;
 
-    return res.status(200).json({
-      success: true,
-      data: { counted: true },
-    });
+    return res.status(200).json({ success: true });
 
   } catch (err) {
-    next(err);
+    // Never crash the page over a view tracking failure
+    console.error('[Views] Track error:', err.message);
+    return res.status(200).json({ success: true });
   }
 };

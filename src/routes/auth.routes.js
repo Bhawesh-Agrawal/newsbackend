@@ -1,80 +1,82 @@
 import { Router } from 'express';
 import { body }   from 'express-validator';
 
-// ── Controllers ───────────────────────────────────────────────
 import {
   register,
-  verifyEmail,        // ← was missing entirely
+  verifyEmail,
   login,
-  googleAuth,         // ← your file had 'googleLogin' — wrong name
+  googleAuth,
   requestMagicLink,
   verifyMagicLink,
-  refresh,      // ← your file had 'refresh' — wrong name
+  refresh,
   logout,
   getMe,
 } from '../controllers/auth.controller.js';
 
-// ── Middleware ────────────────────────────────────────────────
 import { authenticate }                      from '../middleware/auth.middleware.js';
 import { validate }                          from '../middleware/validate.middleware.js';
-import { authLimiter }                       from '../middleware/ratelimit.middleware.js';
 import { verifyTurnstile }                   from '../middleware/turnstile.middleware.js';
 import { registerValidator, loginValidator } from '../validators/auth.validators.js';
+import {
+  loginLimiter,
+  registerLimiter,
+  magicLinkLimiter,
+} from '../middleware/ratelimit.middleware.js';
 
 const router = Router();
 
-// ── Register ─────────────────────────────────────────────────
-// Turnstile runs BEFORE validators so bots are rejected cheaply
+// ── Register — 1 hour window, not shared with login ──────────
 router.post('/register',
-  authLimiter,
+  registerLimiter,        // ← own separate limiter
   verifyTurnstile,
   registerValidator,
   validate,
   register
 );
 
-// ── Verify email (link from registration email) ───────────────
-// No rate limit needed — token is single-use and 24hr expiry
+// ── Verify email — NO rate limit ─────────────────────────────
+// Token is single-use and expires in 24h — no abuse possible
 router.post('/verify-email',
   body('token').notEmpty().withMessage('Verification token required'),
   validate,
   verifyEmail
 );
 
-// ── Login ─────────────────────────────────────────────────────
+// ── Login — own limiter, only failed attempts count ───────────
 router.post('/login',
-  authLimiter,
+  loginLimiter,           // ← own separate limiter
   verifyTurnstile,
   loginValidator,
   validate,
   login
 );
 
-// ── Google OAuth ──────────────────────────────────────────────
-// No Turnstile — Google already verifies the user isn't a bot
+// ── Google OAuth — no Turnstile, Google handles bot detection ─
 router.post('/google',
-  authLimiter,
+  loginLimiter,           // reuse login limiter — same risk profile
   body('id_token').notEmpty().withMessage('Google ID token required'),
   validate,
-  googleAuth          // ← correct name from controller
+  googleAuth
 );
 
-// ── Magic link ────────────────────────────────────────────────
+// ── Magic link — own hourly limiter ──────────────────────────
 router.post('/magic-link/request',
-  authLimiter,
+  magicLinkLimiter,
   body('email').isEmail().withMessage('Valid email required').normalizeEmail(),
   validate,
   requestMagicLink
 );
 
+// ── Magic link verify — NO rate limit ────────────────────────
+// Token is single-use, no benefit to rate limiting
 router.post('/magic-link/verify',
   body('token').notEmpty().withMessage('Token required'),
   validate,
   verifyMagicLink
 );
 
-// ── Token management ──────────────────────────────────────────
-router.post('/refresh', refresh);   // ← correct name from controller
+// ── Token management — no rate limit needed ───────────────────
+router.post('/refresh', refresh);
 router.post('/logout',  authenticate, logout);
 router.get('/me',       authenticate, getMe);
 
