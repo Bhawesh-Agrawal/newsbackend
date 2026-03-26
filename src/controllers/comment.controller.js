@@ -1,5 +1,5 @@
 import sql from '../config/database.js';
-import { automod } from '../utils/automod.js';
+import { Automod } from '../utils/automod.js';
 
 export const createComment = async (req, res, next) => {
   try {
