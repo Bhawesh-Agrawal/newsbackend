@@ -5,11 +5,10 @@ export const trackView = async (req, res, next) => {
     const { id } = req.params;
 
     // req.body may be undefined if no body was sent — default to empty object
-    const { session_id } = req.body || {};
+    const { session_id, referrer } = req.body || {};
 
-    const userId    = req.user?.id    || null;
-    const ipAddress = req.ip          || null;
-    const userAgent = req.headers['user-agent'] || null;
+    const userId    = req.user?.id || null;
+    const ipAddress = req.ip       || null;
 
     // Deduplicate: same user/IP + article within 24 hours counts as 1 view
     const existing = await sql`
@@ -28,15 +27,19 @@ export const trackView = async (req, res, next) => {
       return res.status(200).json({ success: true, message: 'Already counted' });
     }
 
+    // NOTE: article_views schema has NO user_agent column.
+    // Columns: article_id, user_id, session_id, ip_address, referrer
+    // referrer comes from the request body (frontend can optionally send
+    // document.referrer), not from the User-Agent header.
     await sql`
       INSERT INTO article_views
-        (article_id, user_id, session_id, ip_address, user_agent)
+        (article_id, user_id, session_id, ip_address, referrer)
       VALUES (
         ${id},
         ${userId},
-        ${session_id || null},
+        ${session_id   || null},
         ${ipAddress ? sql`${ipAddress}::inet` : null},
-        ${userAgent}
+        ${referrer     || null}
       )
     `;
 
