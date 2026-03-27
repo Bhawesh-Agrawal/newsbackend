@@ -18,6 +18,8 @@ import uploadRoutes from './routes/upload.routes.js';
 import { authenticate } from './middleware/auth.middleware.js';
 import { isEditor, isSuperAdmin, isAuthor } from './middleware/auth.middleware.js';
 
+import { getMarketData } from './controllers/market.controller.js';
+
 import cors from 'cors';
 
 const app  = express();
@@ -103,6 +105,8 @@ app.get(`${API}/health`, async (req, res) => {
     res.status(503).json({ status: 'error', database: err.message });
   }
 });
+
+app.get(`${API}/market/quotes`, getMarketData);
 
 // ── Routes ────────────────────────────────────────────────────────
 app.use(`${API}/auth`,       authRoutes);
