@@ -14,6 +14,7 @@ import commentsRoutes   from './routes/comments.routes.js';
 import newsletterRoutes from './routes/newsletter.routes.js';
 import adminRoutes      from './routes/admin.routes.js';
 import uploadRoutes from './routes/upload.routes.js';
+import savedRoutes from './routes/saved.routes.js';
 
 import { authenticate } from './middleware/auth.middleware.js';
 import { isEditor, isSuperAdmin, isAuthor } from './middleware/auth.middleware.js';
@@ -115,6 +116,7 @@ app.use(`${API}/comments`,   commentsRoutes);
 app.use(`${API}/newsletter`, newsletterRoutes);
 app.use(`${API}/admin`,      adminRoutes);
 app.use(`${API}/upload`, uploadRoutes);
+app.use(`${API}/users`, authenticate, savedRoutes);
 
 // ── 404 + error handling — always last ───────────────────────────
 
