@@ -1,70 +1,56 @@
-import { Router }             from 'express';
-import { uploadArticleCover, uploadAvatar } from '../services/cloudinary.services.js';
-import { authenticate }       from '../middleware/auth.middleware.js';
-import { isAuthor }           from '../middleware/auth.middleware.js';
+/**
+ * upload.routes.js
+ *
+ * Handles binary file uploads that are NOT tied to a user profile.
+ * Currently: article cover images.
+ *
+ * Avatar uploads are handled in auth.routes.js (POST /auth/me/avatar)
+ * because they need to update the users table immediately and are
+ * always scoped to the authenticated user — no reason to separate them.
+ */
+
+import { Router }            from 'express';
+import { uploadArticleCover } from '../services/cloudinary.services.js';
+import { authenticate, isAuthor } from '../middleware/auth.middleware.js';
 
 const router = Router();
 
-// Upload article cover image
+// ── POST /uploads/cover ───────────────────────────────────────
+// Upload an article cover image to Cloudinary.
+// Returns the CDN URL + public_id (store public_id to delete later).
+// Requires: authenticated + author/editor/super_admin role.
 router.post('/cover',
   authenticate,
   isAuthor,
-  (req, res, next) => {
-    uploadArticleCover(req, res, (err) => {
-      if (err) {
-        return res.status(400).json({
-          success: false,
-          message: err.message || 'Upload failed',
-        });
-      }
-      if (!req.file) {
-        return res.status(400).json({
-          success: false,
-          message: 'No file provided',
-        });
-      }
-      res.status(200).json({
-        success: true,
-        data: {
-          url:       req.file.path,       // Cloudinary URL
-          public_id: req.file.filename,   // For deletion later
-        },
-      });
+  coverUploadMiddleware,
+  (req, res) => {
+    res.status(200).json({
+      success: true,
+      data: {
+        url:       req.file.path,      // Cloudinary CDN URL
+        public_id: req.file.filename,  // for cloudinary.uploader.destroy()
+      },
     });
-  }
-);
-
-// Upload user avatar
-router.post('/avatar',
-  authenticate,
-  (req, res, next) => {
-    uploadAvatar(req, res, async (err) => {
-      if (err) {
-        return res.status(400).json({
-          success: false,
-          message: err.message || 'Upload failed',
-        });
-      }
-      if (!req.file) {
-        return res.status(400).json({
-          success: false,
-          message: 'No file provided',
-        });
-      }
-
-      // Save URL to user record immediately
-      const { sql } = await import('../config/database.js');
-      await sql`
-        UPDATE users SET avatar_url = ${req.file.path}
-        WHERE id = ${req.user.id}
-      `;
-
-      res.status(200).json({
-        success: true,
-        data: { url: req.file.path },
-      });
-    });
-  }
+  },
 );
 
 export default router;
+
+// ── Cover upload middleware (wraps multer error handling) ─────
+function coverUploadMiddleware(req, res, next) {
+  uploadArticleCover(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({
+        success: false,
+        message: err.message || 'Cover upload failed. Max 5 MB.',
+      });
+    }
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file provided',
+      });
+    }
+    next();
+  });
+}

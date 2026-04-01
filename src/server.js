@@ -13,11 +13,12 @@ import articlesRoutes   from './routes/articles.routes.js';
 import commentsRoutes   from './routes/comments.routes.js';
 import newsletterRoutes from './routes/newsletter.routes.js';
 import adminRoutes      from './routes/admin.routes.js';
-import uploadRoutes from './routes/upload.routes.js';
-import savedRoutes from './routes/saved.routes.js';
+import uploadRoutes     from './routes/upload.routes.js';
+import savedRoutes      from './routes/saved.routes.js';
+import profileRoutes    from './routes/profile.routes.js';
 
-import { authenticate } from './middleware/auth.middleware.js';
-import { isEditor, isSuperAdmin, isAuthor } from './middleware/auth.middleware.js';
+import { authenticate }                        from './middleware/auth.middleware.js';
+import { isEditor, isSuperAdmin, isAuthor }    from './middleware/auth.middleware.js';
 
 import { getMarketData } from './controllers/market.controller.js';
 
@@ -28,22 +29,17 @@ const PORT = process.env.PORT || 5000;
 const API  = '/api/v1';
 
 const allowedOrigins = [
-  "http://localhost:3000",
-  "http://localhost:5173",
-  "https://dev.gallitify.tech",
-  "https://gallitify.tech"
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'https://dev.gallitify.tech',
+  'https://gallitify.tech',
 ];
 
 app.use(cors({
-  origin: function (origin, callback) {
-    // allow requests with no origin (like Postman, curl)
+  origin(origin, callback) {
     if (!origin) return callback(null, true);
-
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    } else {
-      return callback(new Error("Not allowed by CORS"));
-    }
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
@@ -57,13 +53,13 @@ app.use(helmet({
       defaultSrc:     ["'self'"],
       scriptSrc:      [
         "'self'",
-        "'unsafe-inline'",          // needed for Vite dev
+        "'unsafe-inline'",
         'https://accounts.google.com',
         'https://challenges.cloudflare.com',
       ],
       frameSrc:       [
-        'https://challenges.cloudflare.com',  // Turnstile iframe
-        'https://accounts.google.com',        // Google One Tap iframe
+        'https://challenges.cloudflare.com',
+        'https://accounts.google.com',
       ],
       connectSrc:     [
         "'self'",
@@ -77,16 +73,31 @@ app.use(helmet({
       frameAncestors: ["'none'"],
     },
   },
-}))
+}));
 
 // ── Trust proxy ───────────────────────────────────────────────────
-// Required when deployed behind Nginx, Railway, Render etc.
-// Makes req.ip return the real client IP instead of proxy IP
 app.set('trust proxy', 1);
 
 // ── Request parsing ───────────────────────────────────────────────
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+// IMPORTANT: express.json() and urlencoded() must NOT run on file
+// upload routes. If they consume the multipart stream before multer
+// runs, multer sees an empty body and req.file is always undefined.
+//
+// Solution: skip both body-parsers for any path that ends in /avatar
+// or /cover — those routes use multer which handles its own parsing.
+const isUploadRoute = (req) =>
+  req.path.endsWith('/avatar') || req.path.endsWith('/cover');
+
+app.use((req, res, next) => {
+  if (isUploadRoute(req)) return next();          // skip — multer handles it
+  express.json({ limit: '10mb' })(req, res, next);
+});
+
+app.use((req, res, next) => {
+  if (isUploadRoute(req)) return next();          // skip — multer handles it
+  express.urlencoded({ extended: true })(req, res, next);
+});
+
 app.use(cookieParser());
 
 // ── Global rate limit ─────────────────────────────────────────────
@@ -115,16 +126,11 @@ app.use(`${API}/articles`,   articlesRoutes);
 app.use(`${API}/comments`,   commentsRoutes);
 app.use(`${API}/newsletter`, newsletterRoutes);
 app.use(`${API}/admin`,      adminRoutes);
-app.use(`${API}/upload`, uploadRoutes);
-app.use(`${API}/users`, authenticate, savedRoutes);
+app.use(`${API}/upload`,     uploadRoutes);
+app.use(`${API}/users`,      authenticate, savedRoutes);
+app.use(`${API}/profile`,    authenticate, profileRoutes);
 
-// ── 404 + error handling — always last ───────────────────────────
-
-
-
-//temp fix
-
-// Tags — simple CRUD
+// ── Tags — simple CRUD ────────────────────────────────────────────
 app.get(`${API}/tags`, async (req, res) => {
   const tags = await sql`
     SELECT t.*, COUNT(at.article_id)::int AS article_count
@@ -157,6 +163,7 @@ app.delete(`${API}/tags/:id`, authenticate, isSuperAdmin, async (req, res, next)
   } catch (err) { next(err); }
 });
 
+// ── Categories ────────────────────────────────────────────────────
 app.get(`${API}/categories`, async (req, res, next) => {
   try {
     const categories = await sql`
@@ -176,18 +183,12 @@ app.get(`${API}/categories`, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// POST create category (super_admin only)
 app.post(`${API}/categories`, authenticate, isSuperAdmin, async (req, res, next) => {
   try {
-    const { name, color = '#6366f1', sort_order = 0, description } = req.body;
+    const { name, color = '#6366f1', sort_order = 0 } = req.body;
+    if (!name) return res.status(400).json({ success: false, message: 'Name is required' });
 
-    if (!name) {
-      return res.status(400).json({ success: false, message: 'Name is required' });
-    }
-
-    // Generate slug from name
-    const slug = name.toLowerCase()
-      .trim()
+    const slug = name.toLowerCase().trim()
       .replace(/[^a-z0-9\s-]/g, '')
       .replace(/\s+/g, '-');
 
@@ -196,21 +197,15 @@ app.post(`${API}/categories`, authenticate, isSuperAdmin, async (req, res, next)
       VALUES (${name}, ${slug}, ${color}, ${sort_order}, TRUE)
       RETURNING *
     `;
-
     res.status(201).json({ success: true, data: result[0] });
   } catch (err) {
-    // Duplicate name/slug
     if (err.code === '23505') {
-      return res.status(409).json({
-        success: false,
-        message: 'A category with this name already exists'
-      });
+      return res.status(409).json({ success: false, message: 'A category with this name already exists' });
     }
     next(err);
   }
 });
 
-// PUT update category (super_admin only)
 app.put(`${API}/categories/:id`, authenticate, isSuperAdmin, async (req, res, next) => {
   try {
     const { name, color, sort_order, is_active } = req.body;
@@ -223,38 +218,31 @@ app.put(`${API}/categories/:id`, authenticate, isSuperAdmin, async (req, res, ne
       WHERE id = ${req.params.id}
       RETURNING *
     `;
-    if (result.length === 0)
-      return res.status(404).json({ success: false, message: 'Category not found' });
+    if (!result.length) return res.status(404).json({ success: false, message: 'Category not found' });
     res.json({ success: true, data: result[0] });
   } catch (err) { next(err); }
 });
 
-// DELETE category (super_admin only)
 app.delete(`${API}/categories/:id`, authenticate, isSuperAdmin, async (req, res, next) => {
   try {
-    // Block if articles exist in this category
     const articleCheck = await sql`
-      SELECT COUNT(*)::int AS count
-      FROM articles WHERE category_id = ${req.params.id}
+      SELECT COUNT(*)::int AS count FROM articles WHERE category_id = ${req.params.id}
     `;
     if (articleCheck[0].count > 0) {
       return res.status(400).json({
         success: false,
-        message: `Cannot delete — ${articleCheck[0].count} articles are assigned to this category. Reassign them first.`
+        message: `Cannot delete — ${articleCheck[0].count} articles are assigned to this category. Reassign them first.`,
       });
     }
-
     const result = await sql`
       DELETE FROM categories WHERE id = ${req.params.id} RETURNING id, name
     `;
-    if (result.length === 0)
-      return res.status(404).json({ success: false, message: 'Category not found' });
-
+    if (!result.length) return res.status(404).json({ success: false, message: 'Category not found' });
     res.json({ success: true, message: `Category "${result[0].name}" deleted` });
   } catch (err) { next(err); }
 });
 
-
+// ── 404 + error handling — always last ───────────────────────────
 app.use(notFound);
 app.use(errorHandler);
 
@@ -266,31 +254,23 @@ const server = app.listen(PORT, () => {
 });
 
 // ── Graceful shutdown ─────────────────────────────────────────────
-// When server gets SIGTERM (from Railway, Docker, etc.)
-// finish handling current requests before closing
 const shutdown = async (signal) => {
   console.log(`\n${signal} received — shutting down gracefully`);
-
   server.close(async () => {
     console.log('HTTP server closed');
-
     try {
       await sql.end();
       console.log('Database connections closed');
     } catch (err) {
       console.error('Error closing database:', err.message);
     }
-
     process.exit(0);
   });
-
-  // Force quit after 10 seconds if still waiting
   setTimeout(() => {
     console.error('Forced shutdown after timeout');
     process.exit(1);
   }, 10000);
 };
-
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT',  () => shutdown('SIGINT'));

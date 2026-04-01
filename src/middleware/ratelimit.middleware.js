@@ -28,7 +28,7 @@ export const newsletterLimiter = rateLimit({
 // skipSuccessfulRequests means a real user logging in never hits this
 export const loginLimiter = rateLimit({
   windowMs:               15 * 60 * 1000,
-  max:                    15,
+  max:                    35,
   skipSuccessfulRequests: true,   // ← KEY: successful logins don't count
   standardHeaders:        true,
   legacyHeaders:          false,
@@ -43,7 +43,7 @@ export const loginLimiter = rateLimit({
 // A real user will only ever register once
 export const registerLimiter = rateLimit({
   windowMs:               60 * 60 * 1000,   // 1 hour window
-  max:                    10,
+  max:                    20,
   skipSuccessfulRequests: false,             // registration attempts always count
   standardHeaders:        true,
   legacyHeaders:          false,
@@ -57,7 +57,7 @@ export const registerLimiter = rateLimit({
 // 5 per hour — enough for a user who keeps requesting
 export const magicLinkLimiter = rateLimit({
   windowMs:               60 * 60 * 1000,
-  max:                    5,
+  max:                    25,
   skipSuccessfulRequests: false,
   standardHeaders:        true,
   legacyHeaders:          false,

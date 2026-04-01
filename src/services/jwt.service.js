@@ -1,6 +1,6 @@
-import jwt from 'jsonwebtoken';
+import jwt    from 'jsonwebtoken';
 import crypto from 'crypto';
-import sql from '../config/database.js';
+import sql    from '../config/database.js';
 
 export const signAccessToken = (payload) => {
   return jwt.sign(payload, process.env.JWT_SECRET, {
@@ -39,6 +39,7 @@ export const saveRefreshToken = async (userId, token, meta = {}) => {
       ${meta.ipAddress || null},
       ${expiresAt}
     )
+    ON CONFLICT (token_hash) DO NOTHING
   `;
 };
 
@@ -51,21 +52,23 @@ export const revokeAllUserTokens = async (userId) => {
 };
 
 export const setRefreshTokenCookie = (res, refreshToken) => {
+  const isProd = process.env.NODE_ENV === 'production';
+
   res.cookie('refreshToken', refreshToken, {
     httpOnly: true,
-    secure:   process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
-    domain:   process.env.NODE_ENV === 'production'
-                ? process.env.COOKIE_DOMAIN
-                : undefined,
-    maxAge:   7 * 24 * 60 * 60 * 1000,
+    secure:   isProd,                        // must be true when sameSite=none
+    sameSite: isProd ? 'none' : 'lax',       // 'none' for cross-site, 'lax' for local dev
+    // domain: intentionally omitted — browser infers it correctly
+    maxAge:   7 * 24 * 60 * 60 * 1000,      // 7 days in ms
   });
 };
 
 export const clearRefreshTokenCookie = (res) => {
+  const isProd = process.env.NODE_ENV === 'production';
+
   res.clearCookie('refreshToken', {
     httpOnly: true,
-    secure:   process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    secure:   isProd,
+    sameSite: isProd ? 'none' : 'lax',   // must match set options exactly
   });
 };

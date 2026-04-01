@@ -761,25 +761,34 @@ export const getMe = async (req, res, next) => {
   try {
     const [user] = await sql`
       SELECT
-        id, email, full_name, display_name,
-        avatar_url, bio, role, status,
-        email_verified, created_at, last_login_at
+        id,
+        email,
+        full_name,
+        display_name,
+        avatar_url,
+        bio,
+        role,
+        status,
+        email_verified,
+        auth_provider,        
+        created_at,
+        last_login_at
       FROM users
       WHERE id = ${req.user.id}
     `;
-
+ 
     if (!user) {
       return res.status(404).json({
         success: false,
         message: 'User not found',
       });
     }
-
+ 
     return res.status(200).json({
       success: true,
       data: user,
     });
-
+ 
   } catch (err) {
     next(err);
   }

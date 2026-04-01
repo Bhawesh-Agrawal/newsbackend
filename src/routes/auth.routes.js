@@ -1,3 +1,14 @@
+/**
+ * auth.routes.js
+ *
+ * All auth endpoints live under /auth (mounted in app.js).
+ * Profile editing (PATCH /auth/me, POST /auth/me/avatar) is
+ * co-located here so the frontend always uses /auth/* consistently.
+ *
+ * Upload routes (/uploads/*) stay separate — they're used by
+ * article cover uploads too (different auth requirement: isAuthor).
+ */
+
 import { Router } from 'express';
 import { body }   from 'express-validator';
 
@@ -13,6 +24,9 @@ import {
   getMe,
 } from '../controllers/auth.controller.js';
 
+import { updateProfile, updateAvatar }        from '../controllers/profile.controller.js';
+import { uploadAvatarToCloudinary }           from '../services/cloudinary.services.js';
+
 import { authenticate }                      from '../middleware/auth.middleware.js';
 import { validate }                          from '../middleware/validate.middleware.js';
 import { verifyTurnstile }                   from '../middleware/turnstile.middleware.js';
@@ -25,59 +39,58 @@ import {
 
 const router = Router();
 
-// ── Register — 1 hour window, not shared with login ──────────
+// ── Register ──────────────────────────────────────────────────
 router.post('/register',
-  registerLimiter,        // ← own separate limiter
+  registerLimiter,
   verifyTurnstile,
   registerValidator,
   validate,
-  register
+  register,
 );
 
-// ── Verify email — NO rate limit ─────────────────────────────
-// Token is single-use and expires in 24h — no abuse possible
+// ── Verify email ──────────────────────────────────────────────
 router.post('/verify-email',
   body('token').notEmpty().withMessage('Verification token required'),
   validate,
-  verifyEmail
+  verifyEmail,
 );
 
-// ── Login — own limiter, only failed attempts count ───────────
+// ── Login ─────────────────────────────────────────────────────
 router.post('/login',
-  loginLimiter,           // ← own separate limiter
+  loginLimiter,
   verifyTurnstile,
   loginValidator,
   validate,
-  login
+  login,
 );
 
-// ── Google OAuth — no Turnstile, Google handles bot detection ─
+// ── Google OAuth ──────────────────────────────────────────────
 router.post('/google',
-  loginLimiter,           // reuse login limiter — same risk profile
+  loginLimiter,
   body('id_token').notEmpty().withMessage('Google ID token required'),
   validate,
-  googleAuth
+  googleAuth,
 );
 
-// ── Magic link — own hourly limiter ──────────────────────────
+// ── Magic link ────────────────────────────────────────────────
 router.post('/magic-link/request',
   magicLinkLimiter,
   body('email').isEmail().withMessage('Valid email required').normalizeEmail(),
   validate,
-  requestMagicLink
+  requestMagicLink,
 );
 
-// ── Magic link verify — NO rate limit ────────────────────────
-// Token is single-use, no benefit to rate limiting
 router.post('/magic-link/verify',
   body('token').notEmpty().withMessage('Token required'),
   validate,
-  verifyMagicLink
+  verifyMagicLink,
 );
 
-// ── Token management — no rate limit needed ───────────────────
 router.post('/refresh', refresh);
 router.post('/logout',  authenticate, logout);
-router.get('/me',       authenticate, getMe);
+
+router.get  ('/me',        authenticate, getMe);
+router.patch('/me',        authenticate, updateProfile);
+router.post ('/me/avatar', authenticate, uploadAvatarToCloudinary, updateAvatar);
 
 export default router;
