@@ -121,3 +121,29 @@ export const updateAvatar = async (req, res, next) => {
     next(err);
   }
 };
+
+export const updateAvatarUrl = async (req, res, next) => {
+  try {
+    const { avatar_url } = req.body
+
+    if (!avatar_url || typeof avatar_url !== 'string') {
+      return res.status(400).json({ success: false, message: 'avatar_url is required' })
+    }
+
+    // Basic sanity check — only allow known safe origins
+    const allowed = ['https://api.dicebear.com', 'https://res.cloudinary.com']
+    if (!allowed.some(origin => avatar_url.startsWith(origin))) {
+      return res.status(400).json({ success: false, message: 'Invalid avatar URL' })
+    }
+
+    const [updated] = await sql`
+      UPDATE users SET avatar_url = ${avatar_url}
+      WHERE id = ${req.user.id}
+      RETURNING avatar_url
+    `
+
+    return res.status(200).json({ success: true, data: updated })
+  } catch (err) {
+    next(err)
+  }
+}

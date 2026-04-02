@@ -24,7 +24,7 @@ import {
   getMe,
 } from '../controllers/auth.controller.js';
 
-import { updateProfile, updateAvatar }        from '../controllers/profile.controller.js';
+import { updateProfile, updateAvatar, updateAvatarUrl }        from '../controllers/profile.controller.js';
 import { uploadAvatarToCloudinary }           from '../services/cloudinary.services.js';
 
 import { authenticate }                      from '../middleware/auth.middleware.js';
@@ -91,6 +91,7 @@ router.post('/logout',  authenticate, logout);
 
 router.get  ('/me',        authenticate, getMe);
 router.patch('/me',        authenticate, updateProfile);
+router.patch('/me/avatar-url', authenticate, updateAvatarUrl)
 router.post ('/me/avatar', authenticate, uploadAvatarToCloudinary, updateAvatar);
 
 export default router;
