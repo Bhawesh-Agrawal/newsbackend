@@ -35,6 +35,7 @@ import {
   loginLimiter,
   registerLimiter,
   magicLinkLimiter,
+  googleAuthLimiter
 } from '../middleware/ratelimit.middleware.js';
 
 const router = Router();
@@ -66,7 +67,7 @@ router.post('/login',
 
 // ── Google OAuth ──────────────────────────────────────────────
 router.post('/google',
-  loginLimiter,
+  googleAuthLimiter,
   body('id_token').notEmpty().withMessage('Google ID token required'),
   validate,
   googleAuth,
