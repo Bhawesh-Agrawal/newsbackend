@@ -24,6 +24,8 @@ import { getMarketData } from './controllers/market.controller.js';
 
 import cors from 'cors';
 
+import { memCache } from './utils/memCache.js';
+
 const app  = express();
 const PORT = process.env.PORT || 5000;
 const API  = '/api/v1';
@@ -105,19 +107,22 @@ app.use(cookieParser());
 app.use(API, globalLimiter);
 
 // ── Health check ──────────────────────────────────────────────────
-app.get(`${API}/health`, async (req, res) => {
-  try {
-    await sql`SELECT 1`;
-    res.json({
-      status:    'ok',
-      database:  'connected',
-      uptime:    Math.round(process.uptime()),
-      timestamp: new Date().toISOString(),
-    });
-  } catch (err) {
-    res.status(503).json({ status: 'error', database: err.message });
-  }
+
+let dbConnected = false;
+sql`SELECT 1`.then(() => { dbConnected = true }).catch(() => {});
+
+app.get(`${API}/health`, (req, res) => {
+  res.json({
+    status:    dbConnected ? 'ok' : 'degraded',
+    database:  dbConnected ? 'connected' : 'unknown',
+    uptime:    Math.round(process.uptime()),
+    timestamp: new Date().toISOString(),
+  });
 });
+
+setInterval(() => {
+  sql`SELECT 1`.then(() => { dbConnected = true }).catch(() => { dbConnected = false });
+}, 5 * 60 * 1000);
 
 app.get(`${API}/market/quotes`, getMarketData);
 
@@ -132,15 +137,21 @@ app.use(`${API}/users`,      authenticate, savedRoutes);
 app.use(`${API}/profile`,    authenticate, profileRoutes);
 
 // ── Tags — simple CRUD ────────────────────────────────────────────
-app.get(`${API}/tags`, async (req, res) => {
-  const tags = await sql`
-    SELECT t.*, COUNT(at.article_id)::int AS article_count
-    FROM tags t
-    LEFT JOIN article_tags at ON t.id = at.article_id
-    GROUP BY t.id
-    ORDER BY t.name ASC
-  `;
-  res.json({ success: true, data: tags });
+app.get(`${API}/tags`, async (req, res, next) => {
+  try {
+    const data = await memCache.wrap(
+      'tags:all',
+      () => sql`
+        SELECT t.id, t.name, t.slug, COUNT(at.article_id)::int AS article_count
+        FROM tags t
+        LEFT JOIN article_tags at ON t.id = at.tag_id
+        GROUP BY t.id
+        ORDER BY t.name ASC
+      `,
+      10 * 60 * 1000  // 10 min
+    );
+    res.json({ success: true, data });
+  } catch (err) { next(err); }
 });
 
 app.post(`${API}/tags`, authenticate, isEditor, async (req, res, next) => {
@@ -167,20 +178,22 @@ app.delete(`${API}/tags/:id`, authenticate, isSuperAdmin, async (req, res, next)
 // ── Categories ────────────────────────────────────────────────────
 app.get(`${API}/categories`, async (req, res, next) => {
   try {
-    const categories = await sql`
-      SELECT
-        id, name, slug, color, sort_order, is_active,
-        (
-          SELECT COUNT(*)::int
-          FROM articles
-          WHERE category_id = categories.id
-            AND status = 'published'
-        ) AS article_count
-      FROM categories
-      WHERE is_active = TRUE
-      ORDER BY sort_order ASC, name ASC
-    `;
-    res.json({ success: true, data: categories });
+    const data = await memCache.wrap(
+      'categories:all',
+      () => sql`
+        SELECT
+          id, name, slug, color, sort_order,
+          (
+            SELECT COUNT(*)::int FROM articles
+            WHERE category_id = categories.id AND status = 'published'
+          ) AS article_count
+        FROM categories
+        WHERE is_active = TRUE
+        ORDER BY sort_order ASC, name ASC
+      `,
+      15 * 60 * 1000  // 15 min — categories almost never change
+    );
+    res.json({ success: true, data });
   } catch (err) { next(err); }
 });
 
