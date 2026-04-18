@@ -106,6 +106,7 @@ export const createArticle = async (req, res, next) => {
     if (status === 'published') {
       // Invalidate list + trending caches so fresh content appears immediately
       memCache.invalidate('articles:')
+      memCache.invalidate('stats:')
       memCache.invalidate('trending:')
       scheduleAiProcessing(article.id, bodyText, tag_ids, title)
     }
@@ -123,46 +124,56 @@ export const createArticle = async (req, res, next) => {
 export const getArticles = async (req, res, next) => {
   try {
     const { page, limit, offset } = parsePagination(req.query)
-    const { category = null, search = null, featured = null, status = 'published' } = req.query
-
+ 
+    // Sanitise — never pass empty string
+    const category = req.query.category?.trim() || null
+    const search   = req.query.search?.trim()   || null
+    const featured = req.query.featured === 'true' ? true
+                   : req.query.featured === 'false' ? false
+                   : null
+ 
     const allowedStatuses = ['super_admin', 'editor', 'author']
-    const finalStatus = allowedStatuses.includes(req.user?.role) ? status : 'published'
-
-    // Cache key encodes all filter dimensions.  Staff requests bypass cache
-    // so they see unpublished drafts immediately.
-    const isStaff   = allowedStatuses.includes(req.user?.role)
-    const cacheKey  = isStaff
-      ? null  // never cache staff views — they need live data
+    const finalStatus = allowedStatuses.includes(req.user?.role) && req.query.status
+      ? req.query.status
+      : 'published'
+ 
+    const isStaff  = allowedStatuses.includes(req.user?.role)
+    const cacheKey = isStaff
+      ? null
       : `articles:${page}:${limit}:${category}:${search}:${featured}`
-
+ 
     const fetcher = () => sql`
       SELECT ${LIST_COLS}
       FROM articles a
       JOIN users      u ON a.author_id   = u.id
       JOIN categories c ON a.category_id = c.id
       WHERE a.status = ${finalStatus}
-        AND (${category}::text IS NULL OR c.slug = ${category})
-        AND (${featured}::text IS NULL OR a.is_featured = ${featured === 'true'})
-        AND (${search}::text IS NULL
-             OR a.search_vector @@ plainto_tsquery('english', ${search}))
+        ${category !== null ? sql`AND c.slug = ${category}` : sql``}
+        ${featured !== null ? sql`AND a.is_featured = ${featured}` : sql``}
+        ${search   !== null
+          ? sql`AND a.search_vector @@ plainto_tsquery('english', ${search})`
+          : sql``
+        }
       ORDER BY a.published_at DESC NULLS LAST
       LIMIT  ${limit}::int
       OFFSET ${offset}::int
     `
-
+ 
     const articles = cacheKey
       ? await memCache.wrap(cacheKey, fetcher, TTL.LIST)
       : await fetcher()
-
-    // hasNextPage is inferred client-side from whether we got a full page.
-    // This eliminates the second COUNT(*) query entirely — saving ~50% of DB
-    // load on this endpoint.
+ 
     return res.status(200).json({
       success: true,
       data:    articles,
-      pagination: { page, limit, hasNextPage: articles.length === limit, hasPrevPage: page > 1 },
+      pagination: {
+        page,
+        limit,
+        hasNextPage: articles.length === limit,
+        hasPrevPage: page > 1,
+      },
     })
-
+ 
   } catch (err) { next(err) }
 }
 
@@ -283,6 +294,7 @@ export const updateArticle = async (req, res, next) => {
     // Bust caches for this specific article and all list views
     memCache.invalidate(`article:${article.slug}`)
     memCache.invalidate('articles:')
+    memCache.invalidate('stats:')
     if (status === 'published') {
       memCache.invalidate('trending:')
       scheduleAiProcessing(id, bodyText, tag_ids, title || article.title)
@@ -314,6 +326,7 @@ export const deleteArticle = async (req, res, next) => {
 
     memCache.invalidate(`article:${existing.slug}`)
     memCache.invalidate('articles:')
+    memCache.invalidate('stats:')
     memCache.invalidate('trending:')
 
     return res.status(200).json({ success: true, message: 'Article deleted' })

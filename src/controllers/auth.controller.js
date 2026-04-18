@@ -16,6 +16,7 @@ import {
   sendEmailVerification,
 } from '../services/email.service.js';
 import { generateToken } from '../utils/helpers.js';
+import { rotateRefreshToken } from '../services/jwt.service.js';
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -726,20 +727,6 @@ export const refresh = async (req, res, next) => {
       { userAgent: req.headers['user-agent'], ipAddress: req.ip }
     );
 
-    // rotateRefreshToken uses WHERE EXISTS — if old token was revoked,
-    // the CTE returns 0 rows. Detect this by checking with a quick SELECT.
-    // We do this check only on suspicion (token was valid JWT but might be replayed).
-    // To avoid an extra query normally, we rely on the cookie being rotated
-    // correctly each time. If you want strict replay detection, uncomment below:
-    //
-    // const [check] = await sql`
-    //   SELECT 1 FROM refresh_tokens WHERE token_hash = ${hashToken(newRefreshToken)}
-    // `;
-    // if (!check) {
-    //   clearRefreshTokenCookie(res);
-    //   return res.status(401).json({ success: false, message: 'Token reuse detected' });
-    // }
-
     setRefreshTokenCookie(res, newRefreshToken);
 
     return res.status(200).json({
@@ -752,41 +739,37 @@ export const refresh = async (req, res, next) => {
   }
 };
 
-// ══════════════════════════════════════════════════════════════
-//  GET ME
-//  Before: always hits DB — called after every refresh on app boot
-//  After:  returns JWT payload for basic auth checks; only fetches
-//          fresh profile data when the frontend explicitly needs it
-//          (e.g. AccountPage mount, not on every tab focus)
-//
-//  The access token already contains { id, role } — that's enough
-//  for 90% of "is the user logged in?" checks on the frontend.
-//  Full profile (avatar, bio, display_name) only needed on /account.
-// ══════════════════════════════════════════════════════════════
 export const getMe = async (req, res, next) => {
   try {
-    // req.user is already set by the authenticate middleware (from JWT payload).
-    // Return the lightweight version from the token for auth-check calls.
-    // Add ?full=true when you actually need the complete profile (AccountPage).
+    // ── Lightweight version (FIXED: include safe name) ───────────
     if (!req.query.full) {
       return res.status(200).json({
         success: true,
         data: {
           id:   req.user.id,
           role: req.user.role,
-          // Mark that this is the lightweight version so frontend knows
-          // to fetch full profile separately when on AccountPage
+          // ✅ FIX: always send a fallback name to prevent frontend crash
+          full_name: req.user.full_name || 'User',
           _partial: true,
         },
       });
     }
 
-    // Full profile fetch — only when explicitly requested
+    // ── Full profile fetch ───────────────────────────────────────
     const [user] = await sql`
       SELECT
-        id, email, full_name, display_name, avatar_url, bio,
-        role, status, email_verified, auth_provider,
-        created_at, last_login_at
+        id,
+        email,
+        COALESCE(full_name, email) AS full_name, -- ✅ FIX
+        display_name,
+        avatar_url,
+        bio,
+        role,
+        status,
+        email_verified,
+        auth_provider,
+        created_at,
+        last_login_at
       FROM users
       WHERE id     = ${req.user.id}
         AND status != 'suspended'
@@ -794,10 +777,16 @@ export const getMe = async (req, res, next) => {
 
     if (!user) {
       clearRefreshTokenCookie(res);
-      return res.status(404).json({ success: false, message: 'User not found' });
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
     }
 
-    return res.status(200).json({ success: true, data: user });
+    return res.status(200).json({
+      success: true,
+      data: user,
+    });
 
   } catch (err) {
     next(err);
