@@ -222,7 +222,7 @@ export const login = async (req, res, next) => {
 
     // ── 1. Find user ──────────────────────────────────────────────
     const [user] = await sql`
-      SELECT id, email, full_name, password_hash, role, status, email_verified
+      SELECT id, email, full_name, avatar_url, password_hash, role, status, email_verified
       FROM users
       WHERE email = ${email.toLowerCase().trim()}
     `;
@@ -293,6 +293,7 @@ export const login = async (req, res, next) => {
           id:        user.id,
           email:     user.email,
           full_name: user.full_name,
+          avatar_url : user.avatar_url,
           role:      user.role,
         },
       },
@@ -576,6 +577,8 @@ export const verifyMagicLink = async (req, res, next) => {
       WHERE mlt.token_hash = ${tokenHash}
     `;
 
+    console.log(tokenRow)
+
     if (!tokenRow) {
       return res.status(400).json({
         success: false,
@@ -741,26 +744,26 @@ export const refresh = async (req, res, next) => {
 
 export const getMe = async (req, res, next) => {
   try {
-    // ── Lightweight version (FIXED: include safe name) ───────────
+   /*  // ── Lightweight version (FIXED: include safe name) ───────────
     if (!req.query.full) {
       return res.status(200).json({
         success: true,
         data: {
           id:   req.user.id,
           role: req.user.role,
-          // ✅ FIX: always send a fallback name to prevent frontend crash
           full_name: req.user.full_name || 'User',
+          avatar_url: req.user.avatar_url,
           _partial: true,
         },
       });
-    }
+    } */
 
     // ── Full profile fetch ───────────────────────────────────────
     const [user] = await sql`
       SELECT
         id,
         email,
-        COALESCE(full_name, email) AS full_name, -- ✅ FIX
+        COALESCE(full_name, email) AS full_name, 
         display_name,
         avatar_url,
         bio,

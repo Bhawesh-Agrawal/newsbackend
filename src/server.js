@@ -132,7 +132,7 @@ app.use(`${API}/articles`,   articlesRoutes);
 app.use(`${API}/comments`,   commentsRoutes);
 app.use(`${API}/newsletter`, newsletterRoutes);
 app.use(`${API}/admin`,      adminRoutes);
-app.use(`${API}/upload`,     uploadRoutes);
+app.use(`${API}/uploads`,     uploadRoutes);
 app.use(`${API}/users`,      authenticate, savedRoutes);
 app.use(`${API}/profile`,    authenticate, profileRoutes);
 

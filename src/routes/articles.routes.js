@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   createArticle, getArticles, getArticleBySlug,
+  getArticleById,
   updateArticle, deleteArticle, getTrendingArticles, getRelatedArticles
 } from '../controllers/articles.controller.js';
 import { toggleLike, getLikeStatus }   from '../controllers/likes.controller.js';
@@ -22,9 +23,6 @@ function detectBot(req, res, next) {
   next();
 }
 
-// Cache-Control headers for CDN / browser caching.
-// These complement the in-memory cache — a CDN layer (Vercel edge) can serve
-// list responses for up to 60 s without hitting the origin at all.
 function setCacheHeader(maxAge = 60, staleWhileRevalidate = 120) {
   return (_req, res, next) => {
     res.set('Cache-Control', `public, max-age=${maxAge}, stale-while-revalidate=${staleWhileRevalidate}`)
@@ -32,17 +30,40 @@ function setCacheHeader(maxAge = 60, staleWhileRevalidate = 120) {
   }
 }
 
-router.get('/',            setCacheHeader(60, 120),  getArticles);
-router.get('/trending',    setCacheHeader(120, 300), getTrendingArticles);
+function setCacheHeaderPublicOnly(maxAge = 60, staleWhileRevalidate = 120) {
+  return (req, res, next) => {
+    const token = req.headers.authorization
+    if (token) {
+      res.set('Cache-Control', 'private, no-store')
+    } else {
+      res.set('Cache-Control', `public, max-age=${maxAge}, stale-while-revalidate=${staleWhileRevalidate}`)
+    }
+    next()
+  }
+}
+
+// ── Public routes ─────────────────────────────────────────────────────────────
+router.get('/', setCacheHeaderPublicOnly(60, 120), optionalAuth, getArticles)
+router.get('/trending', setCacheHeader(120, 300), getTrendingArticles);
+
+// ── IMPORTANT: specific paths before /:slug wildcard ─────────────────────────
+
+// Admin-only: fetch any article by UUID regardless of status.
+// Must come BEFORE /:slug so the path "/admin/:id" is matched first.
+// Protected: only authenticated authors/editors can call this.
+// FIX: this is what AdminEditor uses — the frontend sends a UUID, not a slug.
+router.get('/admin/:id', authenticate, isAuthor, getArticleById);
+
+// Public slug lookup — published articles only
 router.get('/:slug',       detectBot, setCacheHeader(300, 600), getArticleBySlug);
 router.get('/:id/related', setCacheHeader(300, 600), getRelatedArticles);
 
-// Mutations — no cache headers
-router.post('/',       authenticate, isAuthor, createArticleValidator, validate, createArticle);
-router.put('/:id',     authenticate, isAuthor, updateArticleValidator, validate, updateArticle);
-router.delete('/:id',  authenticate, isAuthor, deleteArticle);
+// ── Mutations ─────────────────────────────────────────────────────────────────
+router.post('/',      authenticate, isAuthor, createArticleValidator, validate, createArticle);
+router.put('/:id',    authenticate, isAuthor, updateArticleValidator, validate, updateArticle);
+router.delete('/:id', authenticate, isAuthor, deleteArticle);
 
-// Engagement — personalised, never cached at CDN
+// ── Engagement (personalised, never cached at CDN) ────────────────────────────
 router.post('/:id/like', optionalAuth, toggleLike);
 router.get('/:id/like',  optionalAuth, getLikeStatus);
 router.post('/:id/view', optionalAuth, trackView);

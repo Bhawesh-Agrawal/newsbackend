@@ -116,53 +116,120 @@ export const createArticle = async (req, res, next) => {
   } catch (err) { next(err) }
 }
 
-// ── getArticles ───────────────────────────────────────────────────────────────
-// One key insight: the COUNT(*) query doubles DB load on every page.
-// We skip it entirely for paginated browsing — the frontend uses hasMore
-// (incoming.length === limit) rather than a total count.
+export const getArticleById = async (req, res, next) => {
+  try {
+    const { id } = req.params
+ 
+    const result = await sql`
+      SELECT
+        a.*,
+        u.full_name  AS author_name,
+        u.avatar_url AS author_avatar,
+        u.bio        AS author_bio,
+        c.name  AS category_name,
+        c.slug  AS category_slug,
+        c.color AS category_color,
+        COALESCE(
+          (SELECT json_agg(json_build_object('id', t.id, 'name', t.name, 'slug', t.slug))
+           FROM tags t
+           JOIN article_tags at ON t.id = at.tag_id
+           WHERE at.article_id = a.id),
+          '[]'
+        ) AS tags,
+        COALESCE(
+          (SELECT json_agg(t.id)
+           FROM tags t
+           JOIN article_tags at ON t.id = at.tag_id
+           WHERE at.article_id = a.id),
+          '[]'
+        ) AS tag_ids
+      FROM articles a
+      JOIN users      u ON a.author_id   = u.id
+      JOIN categories c ON a.category_id = c.id
+      WHERE a.id = ${id}
+    `
+ 
+    if (result.length === 0) {
+      return res.status(404).json({ success: false, message: 'Article not found' })
+    }
+ 
+    const article = result[0]
+ 
+    // Authors can only view their own articles
+    const isEditorPlus = ['editor', 'super_admin'].includes(req.user.role)
+    if (!isEditorPlus && article.author_id !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Forbidden' })
+    }
+ 
+    return res.status(200).json({ success: true, data: article })
+ 
+  } catch (err) { next(err) }
+}
 
 export const getArticles = async (req, res, next) => {
   try {
     const { page, limit, offset } = parsePagination(req.query)
- 
-    // Sanitise — never pass empty string
+
     const category = req.query.category?.trim() || null
     const search   = req.query.search?.trim()   || null
-    const featured = req.query.featured === 'true' ? true
+    const featured = req.query.featured === 'true'  ? true
                    : req.query.featured === 'false' ? false
                    : null
- 
-    const allowedStatuses = ['super_admin', 'editor', 'author']
-    const finalStatus = allowedStatuses.includes(req.user?.role) && req.query.status
-      ? req.query.status
-      : 'published'
- 
-    const isStaff  = allowedStatuses.includes(req.user?.role)
-    const cacheKey = isStaff
-      ? null
-      : `articles:${page}:${limit}:${category}:${search}:${featured}`
- 
+
+    const role = req.user?.role
+
+    const isAuthorRole = role === 'author'
+    const isEditorPlus = role === 'editor' || role === 'super_admin'
+    const isStaff      = isAuthorRole || isEditorPlus
+
+    // wantsMine=true signals an admin-panel request — scope to the
+    // authenticated author and respect the ?status filter.
+    // Public pages never send this, so logged-in readers still see
+    // all published articles on the homepage.
+    const wantsMine = req.query.mine === 'true'
+
+    // ── Author scoping ────────────────────────────────────────────────────────
+    const authorId = (isAuthorRole && wantsMine) ? req.user.id : null
+
+    // ── Status scoping ────────────────────────────────────────────────────────
+    let finalStatus = null
+    if (!isStaff) {
+      finalStatus = 'published'                        // unauthenticated / public
+    } else if (wantsMine || isEditorPlus) {
+      const qs = req.query.status
+      finalStatus = (qs && qs !== 'all') ? qs : null  // admin panel — respect ?status
+    } else {
+      finalStatus = 'published'                        // logged-in reader on public page
+    }
+
+    // ── Cache key — only for fully public requests ────────────────────────────
+    const cacheKey = !isStaff
+      ? `articles:${page}:${limit}:${category ?? 'null'}:${search ?? 'null'}:${String(featured)}:${finalStatus ?? 'published'}`
+      : null
+
     const fetcher = () => sql`
       SELECT ${LIST_COLS}
       FROM articles a
       JOIN users      u ON a.author_id   = u.id
       JOIN categories c ON a.category_id = c.id
-      WHERE a.status = ${finalStatus}
-        ${category !== null ? sql`AND c.slug = ${category}` : sql``}
-        ${featured !== null ? sql`AND a.is_featured = ${featured}` : sql``}
-        ${search   !== null
+      WHERE TRUE
+        ${finalStatus !== null ? sql`AND a.status = ${finalStatus}`   : sql``}
+        ${authorId    !== null ? sql`AND a.author_id = ${authorId}`   : sql``}
+        ${category    !== null ? sql`AND c.slug = ${category}`        : sql``}
+        ${featured    !== null ? sql`AND a.is_featured = ${featured}` : sql``}
+        ${search      !== null
           ? sql`AND a.search_vector @@ plainto_tsquery('english', ${search})`
           : sql``
         }
-      ORDER BY a.published_at DESC NULLS LAST
+      ORDER BY a.published_at DESC NULLS LAST, a.created_at DESC
       LIMIT  ${limit}::int
       OFFSET ${offset}::int
     `
- 
+
     const articles = cacheKey
       ? await memCache.wrap(cacheKey, fetcher, TTL.LIST)
       : await fetcher()
- 
+
     return res.status(200).json({
       success: true,
       data:    articles,
@@ -173,7 +240,7 @@ export const getArticles = async (req, res, next) => {
         hasPrevPage: page > 1,
       },
     })
- 
+
   } catch (err) { next(err) }
 }
 
