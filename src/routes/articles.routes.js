@@ -12,16 +12,8 @@ import {
   createArticleValidator,
   updateArticleValidator,
 } from '../validators/article.validator.js';
-import { renderArticleMeta }           from '../middleware/botrender.middleware.js';
 
 const router = Router();
-
-function detectBot(req, res, next) {
-  const ua    = req.headers['user-agent'] || '';
-  const isBot = /bot|crawler|spider|facebookexternalhit|twitterbot|whatsapp|telegram|linkedinbot|slackbot|discordbot|googlebot|bingbot|applebot|rogerbot|embedly|quora|outbrain|pinterest|vkshare|showyoubot|flipboard|nuzzel|viber|skype|MSNBot|DuckDuckBot|Baiduspider|YandexBot|Sogou|Exabot/i.test(ua);
-  if (isBot) return renderArticleMeta(req, res);
-  next();
-}
 
 function setCacheHeader(maxAge = 60, staleWhileRevalidate = 120) {
   return (_req, res, next) => {
@@ -42,6 +34,8 @@ function setCacheHeaderPublicOnly(maxAge = 60, staleWhileRevalidate = 120) {
   }
 }
 
+
+
 // ── Public routes ─────────────────────────────────────────────────────────────
 router.get('/', setCacheHeaderPublicOnly(60, 120), optionalAuth, getArticles)
 router.get('/trending', setCacheHeader(120, 300), getTrendingArticles);
@@ -55,7 +49,7 @@ router.get('/trending', setCacheHeader(120, 300), getTrendingArticles);
 router.get('/admin/:id', authenticate, isAuthor, getArticleById);
 
 // Public slug lookup — published articles only
-router.get('/:slug',       detectBot, setCacheHeader(300, 600), getArticleBySlug);
+router.get('/:slug', setCacheHeader(300, 600), getArticleBySlug);
 router.get('/:id/related', setCacheHeader(300, 600), getRelatedArticles);
 
 // ── Mutations ─────────────────────────────────────────────────────────────────

@@ -26,6 +26,12 @@ import cors from 'cors';
 
 import { memCache } from './utils/memCache.js';
 
+// ── Bot renderer — used by /meta/* routes below ───────────────
+import {
+  renderArticleMeta,
+  renderCategoryMeta,
+} from './middleware/botRenderer.middleware.js';
+
 const app  = express();
 const PORT = process.env.PORT || 5000;
 const API  = '/api/v1';
@@ -39,6 +45,7 @@ const allowedOrigins = [
 
 app.use(cors({
   origin(origin, callback) {
+    // Allow requests with no origin (curl, Postman, server-to-server)
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
     return callback(new Error('Not allowed by CORS'));
@@ -82,22 +89,16 @@ app.use(helmet({
 app.set('trust proxy', 1);
 
 // ── Request parsing ───────────────────────────────────────────────
-// IMPORTANT: express.json() and urlencoded() must NOT run on file
-// upload routes. If they consume the multipart stream before multer
-// runs, multer sees an empty body and req.file is always undefined.
-//
-// Solution: skip both body-parsers for any path that ends in /avatar
-// or /cover — those routes use multer which handles its own parsing.
 const isUploadRoute = (req) =>
   req.path.endsWith('/avatar') || req.path.endsWith('/cover');
 
 app.use((req, res, next) => {
-  if (isUploadRoute(req)) return next();          // skip — multer handles it
+  if (isUploadRoute(req)) return next();
   express.json({ limit: '10mb' })(req, res, next);
 });
 
 app.use((req, res, next) => {
-  if (isUploadRoute(req)) return next();          // skip — multer handles it
+  if (isUploadRoute(req)) return next();
   express.urlencoded({ extended: true })(req, res, next);
 });
 
@@ -126,13 +127,29 @@ setInterval(() => {
 
 app.get(`${API}/market/quotes`, getMarketData);
 
-// ── Routes ────────────────────────────────────────────────────────
+// ── Bot / OG meta renderer ────────────────────────────────────────
+//
+// Vercel rewrites bots hitting /article/:slug  → /meta/article/:slug
+//                               /category/:slug → /meta/category/:slug
+//
+// These routes must be:
+//   • Outside the /api/v1 prefix (no auth, no rate-limit, no JSON body-parser)
+//   • Before the notFound handler
+//   • Returning text/html so WhatsApp / Facebook / Telegram can parse OG tags
+//
+// They do NOT need CORS headers because bots never send Origin headers.
+// Helmet is still applied (sets safe defaults), which is fine for HTML pages.
+
+app.get('/meta/article/:slug',  renderArticleMeta);
+app.get('/meta/category/:slug', renderCategoryMeta);
+
+// ── API Routes ────────────────────────────────────────────────────
 app.use(`${API}/auth`,       authRoutes);
 app.use(`${API}/articles`,   articlesRoutes);
 app.use(`${API}/comments`,   commentsRoutes);
 app.use(`${API}/newsletter`, newsletterRoutes);
 app.use(`${API}/admin`,      adminRoutes);
-app.use(`${API}/uploads`,     uploadRoutes);
+app.use(`${API}/uploads`,    uploadRoutes);
 app.use(`${API}/users`,      authenticate, savedRoutes);
 app.use(`${API}/profile`,    authenticate, profileRoutes);
 
@@ -148,7 +165,7 @@ app.get(`${API}/tags`, async (req, res, next) => {
         GROUP BY t.id
         ORDER BY t.name ASC
       `,
-      10 * 60 * 1000  // 10 min
+      10 * 60 * 1000
     );
     res.json({ success: true, data });
   } catch (err) { next(err); }
@@ -191,7 +208,7 @@ app.get(`${API}/categories`, async (req, res, next) => {
         WHERE is_active = TRUE
         ORDER BY sort_order ASC, name ASC
       `,
-      15 * 60 * 1000  // 15 min — categories almost never change
+      15 * 60 * 1000
     );
     res.json({ success: true, data });
   } catch (err) { next(err); }
