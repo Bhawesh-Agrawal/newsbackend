@@ -30,7 +30,7 @@ import { memCache } from './utils/memCache.js';
 import {
   renderArticleMeta,
   renderCategoryMeta,
-} from './middleware/botRenderer.middleware.js';
+} from './middleware/botrender.middleware.js';
 
 const app  = express();
 const PORT = process.env.PORT || 5000;
