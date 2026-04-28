@@ -41,7 +41,8 @@ const allowedOrigins = [
   'http://localhost:5173',
   'https://dev.gallitify.tech',
   'https://gallitify.tech',
-  'https://mangopeoplenews.com'
+  'https://mangopeoplenews.com',
+  'https://www.mangopeoplenews.com'
 ];
 
 app.use(cors({
