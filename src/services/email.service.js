@@ -178,6 +178,26 @@ export const sendConfirmationEmail = async (email, name, token) => {
   });
 };
 
+export const sendResetPasswordEmail = async (email, name, token) => {
+  const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
+
+  const body = `
+    ${logoBadge()}
+    ${heading('Reset your password')}
+    ${subtext(`Hi ${name || 'there'}, we received a request to reset your password. Click the button below to choose a new password.`)}
+    ${ctaButton(resetUrl, 'Reset password')}
+    ${note('This link expires in <strong>60 minutes</strong>. If you didn\'t request a password reset, you can safely ignore this email.')}
+    ${linkFallback(resetUrl)}
+  `;
+
+  return sendEmail({
+    to:      email,
+    subject: 'Reset your Mango People News password',
+    html:    layout(body),
+    text:    `Reset your password: ${resetUrl}`,
+  });
+};
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 2. Unsubscribe confirmation
 // ═══════════════════════════════════════════════════════════════════════════

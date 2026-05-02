@@ -14,6 +14,7 @@ import {
 import {
   sendMagicLinkEmail,
   sendEmailVerification,
+  sendResetPasswordEmail,
 } from '../services/email.service.js';
 import { generateToken } from '../utils/helpers.js';
 import { rotateRefreshToken } from '../services/jwt.service.js';
@@ -537,6 +538,128 @@ export const requestMagicLink = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       message: 'If this email is registered, a login link has been sent.',
+    });
+
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ══════════════════════════════════════════════════════════════
+//  FORGOT PASSWORD
+//  Sends a one-time password reset link to the user's email.
+export const forgotPassword = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+    const normalizedEmail = email.toLowerCase().trim();
+
+    const [user] = await sql`
+      SELECT id, full_name, status
+      FROM users
+      WHERE email = ${normalizedEmail}
+    `;
+
+    if (user && user.status !== 'suspended') {
+      await sql`
+        DELETE FROM magic_link_tokens
+        WHERE user_id = ${user.id}
+          AND used_at IS NULL
+      `;
+
+      const rawToken  = generateToken(32);
+      const tokenHash = hashToken(rawToken);
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 60 minutes
+
+      await sql`
+        INSERT INTO magic_link_tokens (user_id, token_hash, expires_at, ip_address)
+        VALUES (${user.id}, ${tokenHash}, ${expiresAt}, ${req.ip})
+      `;
+
+      sendResetPasswordEmail(normalizedEmail, user.full_name, rawToken)
+        .catch(err =>
+          console.error('[Forgot Password] Email send failed:', err.message)
+        );
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'If this email is registered, a password reset link has been sent.',
+    });
+
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ══════════════════════════════════════════════════════════════
+//  RESET PASSWORD
+//  Validates a reset token and updates the user's password.
+export const resetPassword = async (req, res, next) => {
+  try {
+    const { token, password } = req.body;
+    const tokenHash = hashToken(token);
+
+    const [tokenRow] = await sql`
+      SELECT mlt.*, u.status
+      FROM magic_link_tokens mlt
+      JOIN users u ON mlt.user_id = u.id
+      WHERE mlt.token_hash = ${tokenHash}
+    `;
+
+    if (!tokenRow) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired reset link',
+      });
+    }
+
+    if (tokenRow.used_at) {
+      return res.status(400).json({
+        success: false,
+        message: 'This reset link has already been used.',
+      });
+    }
+
+    if (new Date(tokenRow.expires_at) < new Date()) {
+      return res.status(400).json({
+        success: false,
+        message: 'This reset link has expired.',
+      });
+    }
+
+    if (tokenRow.status === 'suspended') {
+      return res.status(403).json({
+        success: false,
+        message: 'Your account has been suspended. Contact support.',
+      });
+    }
+
+    const password_hash = await bcrypt.hash(password, 12);
+
+    await sql`
+      UPDATE users SET
+        password_hash    = ${password_hash},
+        email_verified   = TRUE,
+        email_verified_at = COALESCE(email_verified_at, NOW()),
+        status           = CASE
+                             WHEN status = 'pending_verification'
+                             THEN 'active'
+                             ELSE status
+                           END
+      WHERE id = ${tokenRow.user_id}
+    `;
+
+    await sql`
+      UPDATE magic_link_tokens
+      SET used_at = NOW()
+      WHERE token_hash = ${tokenHash}
+    `;
+
+    await revokeAllUserTokens(tokenRow.user_id);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Password has been reset successfully. Please sign in with your new password.',
     });
 
   } catch (err) {

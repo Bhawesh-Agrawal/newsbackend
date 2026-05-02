@@ -19,6 +19,8 @@ import {
   googleAuth,
   requestMagicLink,
   verifyMagicLink,
+  forgotPassword,
+  resetPassword,
   refresh,
   logout,
   getMe,
@@ -30,7 +32,12 @@ import { uploadAvatarToCloudinary }           from '../services/cloudinary.servi
 import { authenticate }                      from '../middleware/auth.middleware.js';
 import { validate }                          from '../middleware/validate.middleware.js';
 import { verifyTurnstile }                   from '../middleware/turnstile.middleware.js';
-import { registerValidator, loginValidator } from '../validators/auth.validators.js';
+import {
+  registerValidator,
+  loginValidator,
+  forgotPasswordValidator,
+  resetPasswordValidator,
+} from '../validators/auth.validators.js';
 import {
   loginLimiter,
   registerLimiter,
@@ -63,6 +70,19 @@ router.post('/login',
   loginValidator,
   validate,
   login,
+);
+
+// ── Forgot password ────────────────────────────────────────────
+router.post('/forgot-password',
+  forgotPasswordValidator,
+  validate,
+  forgotPassword,
+);
+
+router.post('/reset-password',
+  resetPasswordValidator,
+  validate,
+  resetPassword,
 );
 
 // ── Google OAuth ──────────────────────────────────────────────
