@@ -17,6 +17,7 @@ const LIST_COLS = sql`
   a.is_featured, a.is_breaking,
   a.view_count, a.like_count, a.comment_count,
   a.published_at, a.created_at,
+  a.ai_summary,
   u.full_name  AS author_name,
   u.avatar_url AS author_avatar,
   c.name  AS category_name,

@@ -230,6 +230,7 @@ app.post(`${API}/categories`, authenticate, isSuperAdmin, async (req, res, next)
       VALUES (${name}, ${slug}, ${color}, ${sort_order}, TRUE)
       RETURNING *
     `;
+    memCache.invalidate('categories:all');
     res.status(201).json({ success: true, data: result[0] });
   } catch (err) {
     if (err.code === '23505') {
@@ -252,6 +253,7 @@ app.put(`${API}/categories/:id`, authenticate, isSuperAdmin, async (req, res, ne
       RETURNING *
     `;
     if (!result.length) return res.status(404).json({ success: false, message: 'Category not found' });
+    memCache.invalidate('categories:all');
     res.json({ success: true, data: result[0] });
   } catch (err) { next(err); }
 });
@@ -271,6 +273,7 @@ app.delete(`${API}/categories/:id`, authenticate, isSuperAdmin, async (req, res,
       DELETE FROM categories WHERE id = ${req.params.id} RETURNING id, name
     `;
     if (!result.length) return res.status(404).json({ success: false, message: 'Category not found' });
+    memCache.invalidate('categories:all');
     res.json({ success: true, message: `Category "${result[0].name}" deleted` });
   } catch (err) { next(err); }
 });
