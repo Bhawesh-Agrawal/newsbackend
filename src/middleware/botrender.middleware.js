@@ -8,6 +8,8 @@ const DEFAULT_DESCRIPTION =
   "India's financial and business news platform. Markets, economy, policy and more. News for Every Indian.";
 const DEFAULT_OG_IMAGE = `${SITE_URL}/og-default.png`;
 
+// ─── Escape helpers ───────────────────────────────────────────────────────────
+
 function escapeAttr(str = "") {
   return String(str)
     .replace(/&/g, "&amp;")
@@ -16,25 +18,90 @@ function escapeAttr(str = "") {
     .replace(/>/g, "&gt;");
 }
 
+// Safe for embedding JSON inside a <script> tag
+function escapeJson(str = "") {
+  return String(str)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026");
+}
+
+// Convert any DB timestamp / date string to ISO 8601
+function toIso(ts) {
+  if (!ts) return null;
+  const d = new Date(ts);
+  return isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+// ─── NewsArticle JSON-LD builder ──────────────────────────────────────────────
+
+function buildNewsArticleJsonLd({ title, description, ogImage, canonicalUrl, article }) {
+  if (!article) return "";
+
+  const schema = {
+    "@context": "https://schema.org",
+    "@type": "NewsArticle",
+    "mainEntityOfPage": {
+      "@type": "WebPage",
+      "@id": canonicalUrl,
+    },
+    "headline": title || SITE_NAME,
+    "description": description || DEFAULT_DESCRIPTION,
+    "image": ogImage || DEFAULT_OG_IMAGE,
+    "datePublished": toIso(article.publishedTime),
+    "dateModified": toIso(article.modifiedTime) || toIso(article.publishedTime),
+    "author": {
+      "@type": "Person",
+      "name": article.authorName || SITE_NAME,
+    },
+    "publisher": {
+      "@type": "NewsMediaOrganization",
+      "name": SITE_NAME,
+      "logo": {
+        "@type": "ImageObject",
+        "url": `${SITE_URL}/logo.png`,
+      },
+    },
+    "inLanguage": "en-IN",
+    "isAccessibleForFree": true,
+  };
+
+  // Only add articleSection if we have a value
+  if (article.section) schema.articleSection = article.section;
+
+  return `<script type="application/ld+json">${escapeJson(JSON.stringify(schema))}<\/script>`;
+}
+
+// ─── Main HTML builder ────────────────────────────────────────────────────────
+
 function buildMetaHtml({ title, description, ogImage, ogType, canonicalUrl, article }) {
   const fullTitle = title
     ? `${title} — ${SITE_NAME}`
     : `${SITE_NAME} — News for Every Indian`;
 
-  const resolvedImage = ogImage?.startsWith('http')
+  const resolvedImage = ogImage?.startsWith("http")
     ? ogImage
     : ogImage
-      ? `${SITE_URL}${ogImage}`
-      : DEFAULT_OG_IMAGE;
+    ? `${SITE_URL}${ogImage}`
+    : DEFAULT_OG_IMAGE;
 
-  const articleMeta = ogType === "article" && article ? `
-    <meta property="article:published_time" content="${escapeAttr(article.publishedTime || "")}" />
-    <meta property="article:modified_time"  content="${escapeAttr(article.modifiedTime  || "")}" />
+  const articleMeta =
+    ogType === "article" && article
+      ? `
+    <meta property="article:published_time" content="${escapeAttr(toIso(article.publishedTime) || "")}" />
+    <meta property="article:modified_time"  content="${escapeAttr(toIso(article.modifiedTime)  || toIso(article.publishedTime) || "")}" />
     <meta property="article:author"         content="${escapeAttr(article.authorName    || SITE_NAME)}" />
-    <meta property="article:section"        content="${escapeAttr(article.section       || "")}" />` : "";
+    <meta property="article:section"        content="${escapeAttr(article.section       || "")}" />`
+      : "";
 
-  // canonicalUrl here is the REAL SPA page (e.g. https://yoursite.com/article/slug)
-  // NOT the /meta/ endpoint — so the redirect sends users to the right place
+  const jsonLd = buildNewsArticleJsonLd({
+    title,
+    description,
+    ogImage: resolvedImage,
+    canonicalUrl,
+    article,
+  });
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -61,6 +128,8 @@ function buildMetaHtml({ title, description, ogImage, ogType, canonicalUrl, arti
   <meta name="twitter:description" content="${escapeAttr(description)}" />
   <meta name="twitter:image"       content="${resolvedImage}" />
 
+  ${jsonLd}
+
   <meta http-equiv="refresh" content="0;url=${canonicalUrl}" />
   <script>window.location.replace(${JSON.stringify(canonicalUrl)});</script>
 </head>
@@ -68,8 +137,10 @@ function buildMetaHtml({ title, description, ogImage, ogType, canonicalUrl, arti
 </html>`;
 }
 
-// Called for /article/:slug bot hits
-export async function renderArticleMeta(req, res, next) {  // ← add next
+// ─── Route handlers ───────────────────────────────────────────────────────────
+
+// Called for /meta/article/:slug bot hits
+export async function renderArticleMeta(req, res, next) {
   const { slug } = req.params;
   try {
     const rows = await sql`
@@ -88,44 +159,50 @@ export async function renderArticleMeta(req, res, next) {  // ← add next
     const canonicalUrl = `${SITE_URL}/article/${slug}`;
 
     if (!rows.length) {
-      // Unknown slug — still return valid OG so shared links don't look broken
-      return res.status(200)
+      return res
+        .status(200)
         .set("Content-Type", "text/html; charset=utf-8")
         .set("Cache-Control", "public, max-age=60")
-        .send(buildMetaHtml({
-          title: null,
-          description: DEFAULT_DESCRIPTION,
-          ogImage: DEFAULT_OG_IMAGE,
-          ogType: "website",
-          canonicalUrl: SITE_URL,
-          article: null,
-        }));
+        .send(
+          buildMetaHtml({
+            title: null,
+            description: DEFAULT_DESCRIPTION,
+            ogImage: DEFAULT_OG_IMAGE,
+            ogType: "website",
+            canonicalUrl: SITE_URL,
+            article: null,
+          })
+        );
     }
 
     const row = rows[0];
-    return res.status(200)
+    return res
+      .status(200)
       .set("Content-Type", "text/html; charset=utf-8")
       .set("Cache-Control", "public, max-age=600, stale-while-revalidate=60")
-      .send(buildMetaHtml({
-        title:       row.title,
-        description: row.excerpt || DEFAULT_DESCRIPTION,
-        ogImage:     row.cover_image || DEFAULT_OG_IMAGE,
-        ogType:      "article",
-        canonicalUrl,
-        article: {
-          publishedTime: row.published_at,
-          modifiedTime:  row.updated_at,
-          authorName:    row.author_name,
-          section:       row.category_name,
-        },
-      }));
+      .send(
+        buildMetaHtml({
+          title:       row.title,
+          description: row.excerpt || DEFAULT_DESCRIPTION,
+          ogImage:     row.cover_image || DEFAULT_OG_IMAGE,
+          ogType:      "article",
+          canonicalUrl,
+          article: {
+            publishedTime: row.published_at,
+            modifiedTime:  row.updated_at,
+            authorName:    row.author_name,
+            section:       row.category_name,
+          },
+        })
+      );
   } catch (err) {
     console.error("[botRenderer] article meta error:", err);
-    return next(err);  // ← now next is in scope
+    return next(err);
   }
 }
 
-export async function renderCategoryMeta(req, res, next) {  // ← add next
+// Called for /meta/category/:slug bot hits
+export async function renderCategoryMeta(req, res, next) {
   const { slug } = req.params;
   try {
     const rows = await sql`
@@ -135,27 +212,36 @@ export async function renderCategoryMeta(req, res, next) {  // ← add next
     const canonicalUrl = `${SITE_URL}/category/${slug}`;
 
     if (!rows.length) {
-      return res.status(200)
+      return res
+        .status(200)
         .set("Content-Type", "text/html; charset=utf-8")
-        .send(buildMetaHtml({
-          title: null, description: DEFAULT_DESCRIPTION,
-          ogImage: DEFAULT_OG_IMAGE, ogType: "website",
-          canonicalUrl: SITE_URL, article: null,
-        }));
+        .send(
+          buildMetaHtml({
+            title: null,
+            description: DEFAULT_DESCRIPTION,
+            ogImage: DEFAULT_OG_IMAGE,
+            ogType: "website",
+            canonicalUrl: SITE_URL,
+            article: null,
+          })
+        );
     }
 
     const row = rows[0];
-    return res.status(200)
+    return res
+      .status(200)
       .set("Content-Type", "text/html; charset=utf-8")
       .set("Cache-Control", "public, max-age=3600")
-      .send(buildMetaHtml({
-        title:       `${row.name} News`,
-        description: row.description || `Latest ${row.name} news — ${SITE_NAME}`,
-        ogImage:     DEFAULT_OG_IMAGE,
-        ogType:      "website",
-        canonicalUrl,
-        article:     null,
-      }));
+      .send(
+        buildMetaHtml({
+          title:       `${row.name} News`,
+          description: row.description || `Latest ${row.name} news — ${SITE_NAME}`,
+          ogImage:     DEFAULT_OG_IMAGE,
+          ogType:      "website",
+          canonicalUrl,
+          article:     null,
+        })
+      );
   } catch (err) {
     console.error("[botRenderer] category meta error:", err);
     return next(err);
