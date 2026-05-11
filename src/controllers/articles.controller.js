@@ -181,11 +181,12 @@ export const getArticles = async (req, res, next) => {
   try {
     const { page, limit, offset } = parsePagination(req.query)
 
-    const category = req.query.category?.trim() || null
-    const search   = req.query.search?.trim()   || null
-    const featured = req.query.featured === 'true'  ? true
+    const category  = req.query.category?.trim() || null
+    const search    = req.query.search?.trim()   || null
+    const featured  = req.query.featured === 'true'  ? true
                    : req.query.featured === 'false' ? false
                    : null
+    const dateRange = req.query.date_range?.trim() || null
 
     const role = req.user?.role
 
@@ -215,7 +216,7 @@ export const getArticles = async (req, res, next) => {
 
     // ── Cache key — only for fully public requests ────────────────────────────
     const cacheKey = !isStaff
-      ? `articles:${page}:${limit}:${category ?? 'null'}:${search ?? 'null'}:${String(featured)}:${finalStatus ?? 'published'}`
+      ? `articles:${page}:${limit}:${category ?? 'null'}:${search ?? 'null'}:${String(featured)}:${dateRange ?? 'null'}:${finalStatus ?? 'published'}`
       : null
 
     const fetcher = () => sql`
@@ -228,6 +229,9 @@ export const getArticles = async (req, res, next) => {
         ${authorId    !== null ? sql`AND a.author_id = ${authorId}`   : sql``}
         ${category    !== null ? sql`AND c.slug = ${category}`        : sql``}
         ${featured    !== null ? sql`AND a.is_featured = ${featured}` : sql``}
+        ${dateRange === 'today' ? sql`AND a.created_at >= date_trunc('day', now())` : sql``}
+        ${dateRange === 'week' ? sql`AND a.created_at >= date_trunc('week', now())` : sql``}
+        ${dateRange === 'month' ? sql`AND a.created_at >= date_trunc('month', now())` : sql``}
         ${search      !== null
           ? sql`AND a.search_vector @@ plainto_tsquery('english', ${search})`
           : sql``

@@ -171,6 +171,7 @@ export const getAdminArticles = async (req, res, next) => {
     // Sanitise — never pass empty string to enum or uuid columns
     const status    = req.query.status?.trim()    || null;
     const author_id = req.query.author_id?.trim() || null;
+    const dateRange = req.query.date_range?.trim() || null;
 
     const isEditorPlus = ['editor', 'super_admin'].includes(req.user.role);
 
@@ -179,7 +180,7 @@ export const getAdminArticles = async (req, res, next) => {
     const filterAuthor = isEditorPlus ? author_id : req.user.id;
 
     const scopeKey = isEditorPlus ? `ed:${author_id}` : `au:${req.user.id}`;
-    const cacheKey = `admin_articles:${page}:${limit}:${status}:${scopeKey}`;
+    const cacheKey = `admin_articles:${page}:${limit}:${status}:${dateRange}:${scopeKey}`;
 
     const articles = await memCache.wrap(
       cacheKey,
@@ -198,6 +199,9 @@ export const getAdminArticles = async (req, res, next) => {
         WHERE TRUE
           ${status       ? sql`AND a.status    = ${status}`             : sql``}
           ${filterAuthor ? sql`AND a.author_id = ${filterAuthor}::uuid` : sql``}
+          ${dateRange === 'today'     ? sql`AND a.created_at >= now() - interval '1 day'`   : sql``}
+          ${dateRange === 'this_week' ? sql`AND a.created_at >= now() - interval '7 days'`  : sql``}
+          ${dateRange === 'this_month' ? sql`AND a.created_at >= now() - interval '30 days'` : sql``}
         ORDER BY a.updated_at DESC
         LIMIT  ${limit}
         OFFSET ${offset}
@@ -212,6 +216,9 @@ export const getAdminArticles = async (req, res, next) => {
       WHERE TRUE
         ${status       ? sql`AND a.status    = ${status}`             : sql``}
         ${filterAuthor ? sql`AND a.author_id = ${filterAuthor}::uuid` : sql``}
+        ${dateRange === 'today'     ? sql`AND a.created_at >= now() - interval '1 day'`   : sql``}
+        ${dateRange === 'this_week' ? sql`AND a.created_at >= now() - interval '7 days'`  : sql``}
+        ${dateRange === 'this_month' ? sql`AND a.created_at >= now() - interval '30 days'` : sql``}
     `;
 
     return res.status(200).json({
