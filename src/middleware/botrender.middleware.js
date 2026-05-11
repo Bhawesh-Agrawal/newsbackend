@@ -130,8 +130,6 @@ function buildMetaHtml({ title, description, ogImage, ogType, canonicalUrl, arti
 
   ${jsonLd}
 
-  <meta http-equiv="refresh" content="0;url=${canonicalUrl}" />
-  <script>window.location.replace(${JSON.stringify(canonicalUrl)});</script>
 </head>
 <body></body>
 </html>`;

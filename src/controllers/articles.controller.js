@@ -61,6 +61,8 @@ function scheduleAiProcessing(articleId, bodyText, tagIds, titleText) {
 
 // ── createArticle ─────────────────────────────────────────────────────────────
 
+// ── createArticle ─────────────────────────────────────────────────────────────
+
 export const createArticle = async (req, res, next) => {
   try {
     const {
@@ -70,6 +72,11 @@ export const createArticle = async (req, res, next) => {
       scheduled_at, meta_title, meta_description,
     } = req.body
 
+    const isAuthor = req.user.role === 'author'
+
+    // Authors cannot publish directly — their articles go to review queue
+    const finalStatus = (isAuthor && status === 'published') ? 'review' : status
+
     const baseSlug = generateSlug(title)
     const existing = await sql`SELECT id FROM articles WHERE slug = ${baseSlug}`
     const slug     = existing.length > 0 ? `${baseSlug}-${Date.now()}` : baseSlug
@@ -77,7 +84,7 @@ export const createArticle = async (req, res, next) => {
     const bodyText     = stripHtml(body)
     const finalExcerpt = excerpt || generateExcerpt(bodyText)
     const reading_time = calculateReadingTime(bodyText)
-    const publishedAt  = status === 'published' ? new Date() : null
+    const publishedAt  = finalStatus === 'published' ? new Date() : null
 
     const [article] = await sql`
       INSERT INTO articles (
@@ -89,7 +96,7 @@ export const createArticle = async (req, res, next) => {
       ) VALUES (
         ${title}, ${slug}, ${subtitle || null}, ${body}, ${bodyText}, ${finalExcerpt},
         ${cover_image || null}, ${category_id}, ${req.user.id},
-        ${status}, ${is_featured}, ${is_breaking},
+        ${finalStatus}, ${is_featured}, ${is_breaking},
         ${reading_time}, ${publishedAt}, ${scheduled_at || null},
         ${meta_title || title}, ${meta_description || finalExcerpt}
       ) RETURNING id, slug, title, status
@@ -104,15 +111,18 @@ export const createArticle = async (req, res, next) => {
       }
     }
 
-    if (status === 'published') {
-      // Invalidate list + trending caches so fresh content appears immediately
+    if (finalStatus === 'published') {
       memCache.invalidate('articles:')
       memCache.invalidate('stats:')
       memCache.invalidate('trending:')
       scheduleAiProcessing(article.id, bodyText, tag_ids, title)
     }
 
-    return res.status(201).json({ success: true, message: 'Article created', data: article })
+    const message = finalStatus === 'review'
+      ? 'Article submitted for review'
+      : 'Article created'
+
+    return res.status(201).json({ success: true, message, data: article })
 
   } catch (err) { next(err) }
 }
@@ -299,6 +309,8 @@ export const getArticleBySlug = async (req, res, next) => {
 
 // ── updateArticle ─────────────────────────────────────────────────────────────
 
+// ── updateArticle ─────────────────────────────────────────────────────────────
+
 export const updateArticle = async (req, res, next) => {
   try {
     const { id } = req.params
@@ -322,9 +334,14 @@ export const updateArticle = async (req, res, next) => {
       meta_title, meta_description,
     } = req.body
 
+    const isAuthor = req.user.role === 'author'
+
+    // Authors cannot publish directly — redirect to review queue
+    const finalStatus = (isAuthor && status === 'published') ? 'review' : status
+
     const bodyText    = body ? stripHtml(body) : article.body_text
     const readingTime = body ? calculateReadingTime(bodyText) : article.reading_time
-    const publishedAt = status === 'published' && !article.published_at
+    const publishedAt = finalStatus === 'published' && !article.published_at
       ? new Date()
       : article.published_at
 
@@ -337,7 +354,7 @@ export const updateArticle = async (req, res, next) => {
         excerpt          = COALESCE(${excerpt          || null}, excerpt),
         cover_image      = COALESCE(${cover_image      || null}, cover_image),
         category_id      = COALESCE(${category_id      || null}, category_id),
-        status           = COALESCE(${status           || null}, status),
+        status           = COALESCE(${finalStatus      || null}, status),
         is_featured      = COALESCE(${is_featured      ?? null}, is_featured),
         is_breaking      = COALESCE(${is_breaking      ?? null}, is_breaking),
         scheduled_at     = COALESCE(${scheduled_at     || null}, scheduled_at),
@@ -359,16 +376,19 @@ export const updateArticle = async (req, res, next) => {
       }
     }
 
-    // Bust caches for this specific article and all list views
     memCache.invalidate(`article:${article.slug}`)
     memCache.invalidate('articles:')
     memCache.invalidate('stats:')
-    if (status === 'published') {
+    if (finalStatus === 'published') {
       memCache.invalidate('trending:')
       scheduleAiProcessing(id, bodyText, tag_ids, title || article.title)
     }
 
-    return res.status(200).json({ success: true, message: 'Article updated', data: updated })
+    const message = finalStatus === 'review'
+      ? 'Article submitted for review'
+      : 'Article updated'
+
+    return res.status(200).json({ success: true, message, data: updated })
 
   } catch (err) { next(err) }
 }
