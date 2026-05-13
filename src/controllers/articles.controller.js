@@ -7,13 +7,9 @@ import { generateSummary, generateTags } from '../services/ai.services.js';
 import { memCache, TTL } from '../utils/memCache.js';
 
 // ── Shared article SELECT columns ─────────────────────────────────────────────
-// Centralised so list vs detail queries stay in sync without duplicating SQL.
-// List queries omit body/body_text — those can be 10–100 KB per article.
-// Detail queries add body, body_text, author_bio, ai_summary, etc.
-
 const LIST_COLS = sql`
   a.id, a.title, a.slug, a.subtitle, a.excerpt,
-  a.cover_image, a.reading_time, a.status,
+  a.cover_image, a.cover_crop, a.reading_time, a.status,
   a.is_featured, a.is_breaking,
   a.view_count, a.like_count, a.comment_count,
   a.published_at, a.created_at,
@@ -25,10 +21,25 @@ const LIST_COLS = sql`
   c.color AS category_color
 `
 
+// ── Sanitise cover_crop input ─────────────────────────────────────────────────
+// Ensures the JSONB value stored is always valid regardless of what the
+// client sends.  Falls back to center/no-zoom if anything looks wrong.
+function sanitizeCrop(raw) {
+  const fallback = { x: 50, y: 50, zoom: 1 }
+  if (!raw || typeof raw !== 'object') return fallback
+  const x    = Number(raw.x)
+  const y    = Number(raw.y)
+  const zoom = Number(raw.zoom)
+  if (!isFinite(x) || !isFinite(y) || !isFinite(zoom)) return fallback
+  return {
+    x:    Math.round(Math.max(0, Math.min(100, x))),
+    y:    Math.round(Math.max(0, Math.min(100, y))),
+    zoom: Math.max(1, Math.min(4, parseFloat(zoom.toFixed(2)))),
+  }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-// Fires AI processing asynchronously after publish — never blocks the response.
-// Uses local vars (no stale closure issues from outer scope).
 function scheduleAiProcessing(articleId, bodyText, tagIds, titleText) {
   (async () => {
     try {
@@ -61,20 +72,17 @@ function scheduleAiProcessing(articleId, bodyText, tagIds, titleText) {
 
 // ── createArticle ─────────────────────────────────────────────────────────────
 
-// ── createArticle ─────────────────────────────────────────────────────────────
-
 export const createArticle = async (req, res, next) => {
   try {
     const {
       title, subtitle, body, excerpt, category_id,
-      tag_ids = [], cover_image, status = 'draft',
+      tag_ids = [], cover_image, cover_crop,
+      status = 'draft',
       is_featured = false, is_breaking = false,
       scheduled_at, meta_title, meta_description,
     } = req.body
 
-    const isAuthor = req.user.role === 'author'
-
-    // Authors cannot publish directly — their articles go to review queue
+    const isAuthor  = req.user.role === 'author'
     const finalStatus = (isAuthor && status === 'published') ? 'review' : status
 
     const baseSlug = generateSlug(title)
@@ -85,17 +93,18 @@ export const createArticle = async (req, res, next) => {
     const finalExcerpt = excerpt || generateExcerpt(bodyText)
     const reading_time = calculateReadingTime(bodyText)
     const publishedAt  = finalStatus === 'published' ? new Date() : null
+    const cropValue    = JSON.stringify(sanitizeCrop(cover_crop))
 
     const [article] = await sql`
       INSERT INTO articles (
         title, slug, subtitle, body, body_text, excerpt,
-        cover_image, category_id, author_id,
+        cover_image, cover_crop, category_id, author_id,
         status, is_featured, is_breaking,
         reading_time, published_at, scheduled_at,
         meta_title, meta_description
       ) VALUES (
         ${title}, ${slug}, ${subtitle || null}, ${body}, ${bodyText}, ${finalExcerpt},
-        ${cover_image || null}, ${category_id}, ${req.user.id},
+        ${cover_image || null}, ${cropValue}::jsonb, ${category_id}, ${req.user.id},
         ${finalStatus}, ${is_featured}, ${is_breaking},
         ${reading_time}, ${publishedAt}, ${scheduled_at || null},
         ${meta_title || title}, ${meta_description || finalExcerpt}
@@ -127,10 +136,12 @@ export const createArticle = async (req, res, next) => {
   } catch (err) { next(err) }
 }
 
+// ── getArticleById ────────────────────────────────────────────────────────────
+
 export const getArticleById = async (req, res, next) => {
   try {
     const { id } = req.params
- 
+
     const result = await sql`
       SELECT
         a.*,
@@ -159,23 +170,24 @@ export const getArticleById = async (req, res, next) => {
       JOIN categories c ON a.category_id = c.id
       WHERE a.id = ${id}
     `
- 
+
     if (result.length === 0) {
       return res.status(404).json({ success: false, message: 'Article not found' })
     }
- 
+
     const article = result[0]
- 
-    // Authors can only view their own articles
+
     const isEditorPlus = ['editor', 'super_admin'].includes(req.user.role)
     if (!isEditorPlus && article.author_id !== req.user.id) {
       return res.status(403).json({ success: false, message: 'Forbidden' })
     }
- 
+
     return res.status(200).json({ success: true, data: article })
- 
+
   } catch (err) { next(err) }
 }
+
+// ── getArticles ───────────────────────────────────────────────────────────────
 
 export const getArticles = async (req, res, next) => {
   try {
@@ -188,33 +200,23 @@ export const getArticles = async (req, res, next) => {
                    : null
     const dateRange = req.query.date_range?.trim() || null
 
-    const role = req.user?.role
-
+    const role         = req.user?.role
     const isAuthorRole = role === 'author'
     const isEditorPlus = role === 'editor' || role === 'super_admin'
     const isStaff      = isAuthorRole || isEditorPlus
+    const wantsMine    = req.query.mine === 'true'
+    const authorId     = (isAuthorRole && wantsMine) ? req.user.id : null
 
-    // wantsMine=true signals an admin-panel request — scope to the
-    // authenticated author and respect the ?status filter.
-    // Public pages never send this, so logged-in readers still see
-    // all published articles on the homepage.
-    const wantsMine = req.query.mine === 'true'
-
-    // ── Author scoping ────────────────────────────────────────────────────────
-    const authorId = (isAuthorRole && wantsMine) ? req.user.id : null
-
-    // ── Status scoping ────────────────────────────────────────────────────────
     let finalStatus = null
     if (!isStaff) {
-      finalStatus = 'published'                        // unauthenticated / public
+      finalStatus = 'published'
     } else if (wantsMine || isEditorPlus) {
       const qs = req.query.status
-      finalStatus = (qs && qs !== 'all') ? qs : null  // admin panel — respect ?status
+      finalStatus = (qs && qs !== 'all') ? qs : null
     } else {
-      finalStatus = 'published'                        // logged-in reader on public page
+      finalStatus = 'published'
     }
 
-    // ── Cache key — only for fully public requests ────────────────────────────
     const cacheKey = !isStaff
       ? `articles:${page}:${limit}:${category ?? 'null'}:${search ?? 'null'}:${String(featured)}:${dateRange ?? 'null'}:${finalStatus ?? 'published'}`
       : null
@@ -229,10 +231,10 @@ export const getArticles = async (req, res, next) => {
         ${authorId    !== null ? sql`AND a.author_id = ${authorId}`   : sql``}
         ${category    !== null ? sql`AND c.slug = ${category}`        : sql``}
         ${featured    !== null ? sql`AND a.is_featured = ${featured}` : sql``}
-        ${dateRange === 'today' ? sql`AND a.created_at >= date_trunc('day', now())` : sql``}
-        ${dateRange === 'week' ? sql`AND a.created_at >= date_trunc('week', now())` : sql``}
+        ${dateRange === 'today' ? sql`AND a.created_at >= date_trunc('day', now())`   : sql``}
+        ${dateRange === 'week'  ? sql`AND a.created_at >= date_trunc('week', now())`  : sql``}
         ${dateRange === 'month' ? sql`AND a.created_at >= date_trunc('month', now())` : sql``}
-        ${search      !== null
+        ${search !== null
           ? sql`AND a.search_vector @@ plainto_tsquery('english', ${search})`
           : sql``
         }
@@ -263,8 +265,8 @@ export const getArticles = async (req, res, next) => {
 
 export const getArticleBySlug = async (req, res, next) => {
   try {
-    const { slug }    = req.params
-    const cacheKey    = `article:${slug}`
+    const { slug }  = req.params
+    const cacheKey  = `article:${slug}`
 
     const fetcher = async () => {
       const result = await sql`
@@ -285,8 +287,6 @@ export const getArticleBySlug = async (req, res, next) => {
 
       const article = result[0]
 
-      // Tags fetched in same round-trip batch — one extra query vs zero is
-      // acceptable here; tags are tiny and rarely change
       article.tags = await sql`
         SELECT t.id, t.name, t.slug
         FROM tags t
@@ -302,7 +302,6 @@ export const getArticleBySlug = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Article not found' })
     }
 
-    // Increment view count in the background — never blocks or blocks cache
     sql`UPDATE articles SET view_count = view_count + 1 WHERE id = ${article.id}`
       .catch(() => {})
 
@@ -310,8 +309,6 @@ export const getArticleBySlug = async (req, res, next) => {
 
   } catch (err) { next(err) }
 }
-
-// ── updateArticle ─────────────────────────────────────────────────────────────
 
 // ── updateArticle ─────────────────────────────────────────────────────────────
 
@@ -333,14 +330,12 @@ export const updateArticle = async (req, res, next) => {
 
     const {
       title, subtitle, body, excerpt, category_id,
-      tag_ids, cover_image, status,
-      is_featured, is_breaking, scheduled_at,
-      meta_title, meta_description,
+      tag_ids, cover_image, cover_crop,
+      status, is_featured, is_breaking,
+      scheduled_at, meta_title, meta_description,
     } = req.body
 
-    const isAuthor = req.user.role === 'author'
-
-    // Authors cannot publish directly — redirect to review queue
+    const isAuthor    = req.user.role === 'author'
     const finalStatus = (isAuthor && status === 'published') ? 'review' : status
 
     const bodyText    = body ? stripHtml(body) : article.body_text
@@ -348,6 +343,12 @@ export const updateArticle = async (req, res, next) => {
     const publishedAt = finalStatus === 'published' && !article.published_at
       ? new Date()
       : article.published_at
+
+    // Only update cover_crop if the client explicitly sent one.
+    // If omitted (undefined), keep whatever is already in the DB.
+    const cropValue = cover_crop !== undefined
+      ? JSON.stringify(sanitizeCrop(cover_crop))
+      : null
 
     const [updated] = await sql`
       UPDATE articles SET
@@ -357,6 +358,7 @@ export const updateArticle = async (req, res, next) => {
         body_text        = COALESCE(${bodyText         || null}, body_text),
         excerpt          = COALESCE(${excerpt          || null}, excerpt),
         cover_image      = COALESCE(${cover_image      || null}, cover_image),
+        cover_crop       = COALESCE(${cropValue ? sql`${cropValue}::jsonb` : sql`NULL`}, cover_crop),
         category_id      = COALESCE(${category_id      || null}, category_id),
         status           = COALESCE(${finalStatus      || null}, status),
         is_featured      = COALESCE(${is_featured      ?? null}, is_featured),
@@ -427,14 +429,10 @@ export const deleteArticle = async (req, res, next) => {
 }
 
 // ── getTrendingArticles ───────────────────────────────────────────────────────
-// This is the most expensive query — full table scan with GROUP BY + scoring.
-// Cached at 5 min on the backend and 2 min on the frontend.
-// Two separate consumers (BreakingBar + TrendingPage) share the same cache
-// entry — effectively one DB hit per 5 minutes regardless of traffic.
 
 export const getTrendingArticles = async (req, res, next) => {
   try {
-    const days  = Math.min(parseInt(req.query.days ?? '7'),  3650)
+    const days  = Math.min(parseInt(req.query.days  ?? '7'),  3650)
     const limit = Math.min(parseInt(req.query.limit ?? '10'), 50)
 
     const cacheKey = `trending:${days}:${limit}`
@@ -443,7 +441,7 @@ export const getTrendingArticles = async (req, res, next) => {
       cacheKey,
       () => sql`
         SELECT
-          a.id, a.title, a.slug, a.cover_image, a.excerpt,
+          a.id, a.title, a.slug, a.cover_image, a.cover_crop, a.excerpt,
           a.view_count, a.like_count, a.comment_count,
           a.published_at, a.reading_time,
           a.is_breaking, a.is_featured,
@@ -476,9 +474,6 @@ export const getTrendingArticles = async (req, res, next) => {
 }
 
 // ── getRelatedArticles ────────────────────────────────────────────────────────
-// The original used ts_stat() which re-executes the tsvector query at planning
-// time — very expensive.  Replaced with a simple same-category recency query
-// which is orders of magnitude cheaper and still relevant.
 
 export const getRelatedArticles = async (req, res, next) => {
   try {
@@ -505,7 +500,7 @@ export const getRelatedArticles = async (req, res, next) => {
           LIMIT 6
         `
       },
-      TTL.DETAIL,   // related articles don't change often
+      TTL.DETAIL,
     )
 
     res.json({ success: true, data: articles })
