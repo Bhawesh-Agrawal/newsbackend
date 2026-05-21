@@ -42,7 +42,8 @@ const allowedOrigins = [
   'https://dev.gallitify.tech',
   'https://gallitify.tech',
   'https://mangopeoplenews.com',
-  'https://www.mangopeoplenews.com'
+  'https://www.mangopeoplenews.com',
+  'https://mango-people-news-git-prototype-bhawesh-agrawals-projects.vercel.app/'
 ];
 
 app.use(cors({
