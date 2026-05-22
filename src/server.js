@@ -16,6 +16,7 @@ import adminRoutes      from './routes/admin.routes.js';
 import uploadRoutes     from './routes/upload.routes.js';
 import savedRoutes      from './routes/saved.routes.js';
 import profileRoutes    from './routes/profile.routes.js';
+import homeRoutes       from './routes/home.routes.js';
 
 import { authenticate }                        from './middleware/auth.middleware.js';
 import { isEditor, isSuperAdmin, isAuthor }    from './middleware/auth.middleware.js';
@@ -129,6 +130,7 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 app.get(`${API}/market/quotes`, getMarketData);
+app.use(`${API}/home`, homeRoutes);
 
 // ── Bot / OG meta renderer ────────────────────────────────────────
 //
