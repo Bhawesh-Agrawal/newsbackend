@@ -34,9 +34,10 @@ async function fetchCategories() {
   );
 }
 
-async function fetchBreakingArticles() {
+// Merged: replaces fetchBreakingArticles + fetchHeroArticles (was 2 DB hits, now 1)
+async function fetchRecentArticles() {
   return memCache.wrap(
-    'home:breaking:12',
+    'home:recent:12',
     () => sql`
       SELECT ${LIST_COLS}
       FROM articles a
@@ -45,22 +46,6 @@ async function fetchBreakingArticles() {
       WHERE a.status = 'published'
       ORDER BY a.published_at DESC NULLS LAST, a.created_at DESC
       LIMIT 12
-    `,
-    TTL.LIST
-  );
-}
-
-async function fetchHeroArticles() {
-  return memCache.wrap(
-    'home:hero:9',
-    () => sql`
-      SELECT ${LIST_COLS}
-      FROM articles a
-      JOIN users      u ON a.author_id   = u.id
-      JOIN categories c ON a.category_id = c.id
-      WHERE a.status = 'published'
-      ORDER BY a.published_at DESC NULLS LAST, a.created_at DESC
-      LIMIT 9
     `,
     TTL.LIST
   );
@@ -85,25 +70,28 @@ async function fetchAiSummaries() {
   );
 }
 
+// Fixed: was missing memCache.wrap — ran raw SQL on every request
 async function fetchCategoryArticles() {
-  const rows = await sql`
-    WITH ranked AS (
-      SELECT ${LIST_COLS},
-        ROW_NUMBER() OVER (
-          PARTITION BY c.slug
-          ORDER BY a.published_at DESC NULLS LAST, a.created_at DESC
-        ) AS rn
-      FROM articles a
-      JOIN categories c ON a.category_id = c.id
-      JOIN users      u ON a.author_id   = u.id
-      WHERE a.status = 'published'
-        AND c.is_active = TRUE
-    )
-    SELECT *
-    FROM ranked
-    WHERE rn <= 6
-    ORDER BY category_slug ASC, rn ASC
-  `;
+  const rows = await memCache.wrap(
+    'home:categoryArticles',
+    () => sql`
+      WITH ranked AS (
+        SELECT ${LIST_COLS},
+          ROW_NUMBER() OVER (
+            PARTITION BY c.slug
+            ORDER BY a.published_at DESC NULLS LAST, a.created_at DESC
+          ) AS rn
+        FROM articles a
+        JOIN categories c ON a.category_id = c.id
+        JOIN users      u ON a.author_id   = u.id
+        WHERE a.status = 'published'
+          AND c.is_active = TRUE
+      )
+      SELECT * FROM ranked WHERE rn <= 6
+      ORDER BY category_slug ASC, rn ASC
+    `,
+    TTL.LIST
+  );
 
   return rows.reduce((acc, article) => {
     const key = article.category_slug;
@@ -115,24 +103,26 @@ async function fetchCategoryArticles() {
 
 export const getHomeData = async (req, res, next) => {
   try {
-    const [categories, breaking, hero, aiSummaries, categoryArticles, marketQuoteResult] = await Promise.all([
+    // Market quotes removed from critical path — no longer blocks response
+    const [categories, recent, aiSummaries, categoryArticles] = await Promise.all([
       fetchCategories(),
-      fetchBreakingArticles(),
-      fetchHeroArticles(),
+      fetchRecentArticles(),
       fetchAiSummaries(),
       fetchCategoryArticles(),
-      fetchMarketQuotes(),
     ]);
+
+    // Warm the market quotes cache in background for the dedicated /market endpoint
+    fetchMarketQuotes().catch(() => {});
 
     return res.json({
       success: true,
       data: {
         categories,
-        breaking,
-        hero,
+        breaking: recent,           // all 12
+        hero:     recent.slice(0, 9), // first 9 — no extra DB call
         aiSummaries,
         categoryArticles,
-        marketQuotes: marketQuoteResult.data,
+        marketQuotes: [],           // fetched separately by the client
       },
     });
   } catch (err) {
