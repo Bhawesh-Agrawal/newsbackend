@@ -5,6 +5,7 @@ import {
 } from "../utils/helpers.js";
 import { generateSummary, generateTags } from '../services/ai.services.js';
 import { memCache, TTL } from '../utils/memCache.js';
+import { submitToIndexNow } from '../utils/indexnow.js';
 
 // ── Shared article SELECT columns ─────────────────────────────────────────────
 const LIST_COLS = sql`
@@ -125,6 +126,7 @@ export const createArticle = async (req, res, next) => {
       memCache.invalidate('stats:')
       memCache.invalidate('trending:')
       scheduleAiProcessing(article.id, bodyText, tag_ids, title)
+      submitToIndexNow(article.slug)
     }
 
     const message = finalStatus === 'review'
@@ -388,6 +390,7 @@ export const updateArticle = async (req, res, next) => {
     if (finalStatus === 'published') {
       memCache.invalidate('trending:')
       scheduleAiProcessing(id, bodyText, tag_ids, title || article.title)
+      submitToIndexNow(updated.slug)
     }
 
     const message = finalStatus === 'review'

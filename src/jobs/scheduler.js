@@ -1,5 +1,6 @@
 import cron from 'node-cron';
 import sql from '../config/database.js';
+import { submitToIndexNow } from '../utils/indexnow.js';
 
 // ── Publish scheduled articles ────────────────────────────────────
 // Runs every minute
@@ -12,14 +13,15 @@ const publishScheduledArticles = async () => {
         published_at = NOW()
       WHERE status       = 'scheduled'
         AND scheduled_at <= NOW()
-      RETURNING id, title, scheduled_at
+      RETURNING id, slug, title, scheduled_at
     `;
 
     if (published.length > 0) {
       console.log(`[Scheduler] Published ${published.length} scheduled articles:`);
-      published.forEach(a =>
+      published.forEach(a => {
         console.log(`  - "${a.title}" (was scheduled for ${a.scheduled_at})`)
-      );
+        submitToIndexNow(a.slug)
+      });
     }
   } catch (err) {
     console.error('[Scheduler] Failed to publish scheduled articles:', err.message);

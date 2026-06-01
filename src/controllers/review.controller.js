@@ -1,6 +1,7 @@
 import sql from "../config/database.js";
 import { memCache, TTL } from '../utils/memCache.js';
-import { generateSummary } from "../services/ai.services.js"; 
+import { generateSummary } from "../services/ai.services.js";
+import { submitToIndexNow } from '../utils/indexnow.js';
 
 // ── getReviewQueue ────────────────────────────────────────────────────────────
 // Returns all articles with status = 'review', newest first.
@@ -83,6 +84,7 @@ export const reviewAction = async (req, res, next) => {
     if (action === 'approve') {
       memCache.invalidate('trending:')
       scheduleAiProcessing(id, existing.body_text, [], existing.title)
+      submitToIndexNow(updated.slug)
     }
 
     const messages = {
