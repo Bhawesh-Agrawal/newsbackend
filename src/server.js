@@ -96,6 +96,14 @@ app.set('trust proxy', 1);
 const isUploadRoute = (req) =>
   req.path.endsWith('/avatar') || req.path.endsWith('/cover');
 
+// Prevent search engines from indexing raw JSON API responses
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/')) {
+    res.set('X-Robots-Tag', 'noindex, nofollow');
+  }
+  next();
+});
+
 app.use((req, res, next) => {
   if (isUploadRoute(req)) return next();
   express.json({ limit: '10mb' })(req, res, next);
@@ -204,7 +212,7 @@ app.get(`${API}/categories`, async (req, res, next) => {
       'categories:all',
       () => sql`
         SELECT
-          id, name, slug, color, sort_order,
+          id, name, slug, description, color, sort_order,
           (
             SELECT COUNT(*)::int FROM articles
             WHERE category_id = categories.id AND status = 'published'

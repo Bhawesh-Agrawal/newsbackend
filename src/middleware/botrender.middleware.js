@@ -151,6 +151,8 @@ export async function renderArticleMeta(req, res, next) {
       SELECT
         a.title,
         a.excerpt,
+        a.meta_title,
+        a.meta_description,
         a.cover_image,
         a.published_at,
         a.updated_at,
@@ -196,8 +198,8 @@ export async function renderArticleMeta(req, res, next) {
       .set("Cache-Control", "public, max-age=600, stale-while-revalidate=60")
       .send(
         buildMetaHtml({
-          title:       row.title,
-          description: row.excerpt || DEFAULT_DESCRIPTION,
+          title:       row.meta_title || row.title,
+          description: row.meta_description || row.excerpt || DEFAULT_DESCRIPTION,
           ogImage:     row.cover_image || DEFAULT_OG_IMAGE,
           ogType:      "article",
           canonicalUrl,
