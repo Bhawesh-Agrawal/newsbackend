@@ -277,6 +277,9 @@ export const getArticleBySlug = async (req, res, next) => {
           u.full_name  AS author_name,
           u.avatar_url AS author_avatar,
           u.bio        AS author_bio,
+          u.instagram_profile,
+          u.twitter_profile,
+          u.linkedin_profile,
           c.name  AS category_name,
           c.slug  AS category_slug,
           c.color AS category_color
