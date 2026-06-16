@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import sql from '../config/database.js';
 import { submitToIndexNow } from '../utils/indexnow.js';
+import { memCache } from '../utils/memCache.js';
 
 // ── Publish scheduled articles ────────────────────────────────────
 // Runs every minute
@@ -10,7 +11,9 @@ const publishScheduledArticles = async () => {
       UPDATE articles
       SET
         status       = 'published',
-        published_at = NOW()
+        published_at = NOW(),
+        featured_at  = CASE WHEN is_featured = TRUE THEN NOW() ELSE featured_at END,
+        breaking_at  = CASE WHEN is_breaking = TRUE THEN NOW() ELSE breaking_at END
       WHERE status       = 'scheduled'
         AND scheduled_at <= NOW()
       RETURNING id, slug, title, scheduled_at
@@ -44,6 +47,41 @@ const cleanExpiredTokens = async () => {
   }
 };
 
+// ── Expire featured / breaking after 48 hours ─────────────────────
+// Runs every hour
+const expireFeaturedBreaking = async () => {
+  try {
+    let total = 0;
+
+    const featured = await sql`
+      UPDATE articles
+      SET is_featured = FALSE
+      WHERE is_featured = TRUE
+        AND featured_at IS NOT NULL
+        AND featured_at <= NOW() - INTERVAL '48 hours'
+    `;
+    total += featured.count;
+
+    const breaking = await sql`
+      UPDATE articles
+      SET is_breaking = FALSE
+      WHERE is_breaking = TRUE
+        AND breaking_at IS NOT NULL
+        AND breaking_at <= NOW() - INTERVAL '48 hours'
+    `;
+    total += breaking.count;
+
+    if (total > 0) {
+      console.log(`[Scheduler] Expired featured/breaking flags for ${total} articles`);
+      memCache.invalidate('articles:');
+      memCache.invalidate('stats:');
+      memCache.invalidate('trending:');
+    }
+  } catch (err) {
+    console.error('[Scheduler] Failed to expire featured/breaking:', err.message);
+  }
+};
+
 // ── Start all jobs ────────────────────────────────────────────────
 export const startScheduler = () => {
   // Every minute — '* * * * *'
@@ -51,6 +89,9 @@ export const startScheduler = () => {
 
   // Every day at 2am — '0 2 * * *'
   cron.schedule('0 2 * * *', cleanExpiredTokens);
+
+  // Every hour — '0 * * * *'
+  cron.schedule('0 * * * *', expireFeaturedBreaking);
 
   console.log('[Scheduler] Background jobs started');
 };

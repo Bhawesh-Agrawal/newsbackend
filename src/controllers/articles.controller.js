@@ -95,6 +95,8 @@ export const createArticle = async (req, res, next) => {
     const reading_time = calculateReadingTime(bodyText)
     const publishedAt  = finalStatus === 'published' ? new Date() : null
     const cropValue    = JSON.stringify(sanitizeCrop(cover_crop))
+    const featuredAt   = is_featured ? new Date() : null
+    const breakingAt   = is_breaking ? new Date() : null
 
     const [article] = await sql`
       INSERT INTO articles (
@@ -102,13 +104,15 @@ export const createArticle = async (req, res, next) => {
         cover_image, cover_crop, category_id, author_id,
         status, is_featured, is_breaking,
         reading_time, published_at, scheduled_at,
-        meta_title, meta_description
+        meta_title, meta_description,
+        featured_at, breaking_at
       ) VALUES (
         ${title}, ${slug}, ${subtitle || null}, ${body}, ${bodyText}, ${finalExcerpt},
         ${cover_image || null}, ${cropValue}::jsonb, ${category_id}, ${req.user.id},
         ${finalStatus}, ${is_featured}, ${is_breaking},
         ${reading_time}, ${publishedAt}, ${scheduled_at || null},
-        ${meta_title || title}, ${meta_description || finalExcerpt}
+        ${meta_title || title}, ${meta_description || finalExcerpt},
+        ${featuredAt}, ${breakingAt}
       ) RETURNING id, slug, title, status
     `
 
@@ -368,6 +372,16 @@ export const updateArticle = async (req, res, next) => {
         status           = COALESCE(${finalStatus      || null}, status),
         is_featured      = COALESCE(${is_featured      ?? null}, is_featured),
         is_breaking      = COALESCE(${is_breaking      ?? null}, is_breaking),
+        featured_at      = CASE
+                            WHEN ${is_featured ?? null} IS NULL THEN featured_at
+                            WHEN ${is_featured ?? null} = TRUE THEN NOW()
+                            ELSE NULL
+                           END,
+        breaking_at      = CASE
+                            WHEN ${is_breaking ?? null} IS NULL THEN breaking_at
+                            WHEN ${is_breaking ?? null} = TRUE THEN NOW()
+                            ELSE NULL
+                           END,
         scheduled_at     = COALESCE(${scheduled_at     || null}, scheduled_at),
         meta_title       = COALESCE(${meta_title       || null}, meta_title),
         meta_description = COALESCE(${meta_description || null}, meta_description),
@@ -489,22 +503,77 @@ export const getRelatedArticles = async (req, res, next) => {
     const articles = await memCache.wrap(
       cacheKey,
       async () => {
+        // 1) Try tag-based matching and scoring by shared tag count
+        const tagRows = await sql`
+          SELECT tag_id FROM article_tags WHERE article_id = ${id}
+        `
+        const tagIds = (tagRows || []).map(r => r.tag_id).filter(Boolean)
+
+        if (tagIds.length > 0) {
+          const relatedByTags = await sql`
+            SELECT ${LIST_COLS}, COUNT(at2.tag_id) AS shared
+            FROM articles a
+            JOIN users      u ON a.author_id   = u.id
+            JOIN categories c ON a.category_id = c.id
+            LEFT JOIN article_tags at2 ON at2.article_id = a.id
+            WHERE a.status = 'published'
+              AND a.id != ${id}
+              AND at2.tag_id = ANY(${tagIds})
+            GROUP BY a.id, u.id, c.id
+            ORDER BY shared DESC, a.published_at DESC
+            LIMIT 12
+          `
+
+          if (relatedByTags && relatedByTags.length > 0) return relatedByTags
+        }
+
+        // 2) Fallback to category-based recent articles (previous behaviour)
         const [base] = await sql`
           SELECT category_id FROM articles WHERE id = ${id}
         `
-        if (!base) return []
+        if (base) {
+          const byCategory = await sql`
+            SELECT ${LIST_COLS}
+            FROM articles a
+            JOIN users      u ON a.author_id   = u.id
+            JOIN categories c ON a.category_id = c.id
+            WHERE a.status      = 'published'
+              AND a.id         != ${id}
+              AND a.category_id = ${base.category_id}
+            ORDER BY a.published_at DESC
+            LIMIT 6
+          `
+          if (byCategory && byCategory.length > 0) return byCategory
+        }
 
-        return sql`
-          SELECT ${LIST_COLS}
+        // 3) Final fallback: trending
+        const trending = await sql`
+          SELECT
+            a.id, a.title, a.slug, a.cover_image, a.cover_crop, a.excerpt,
+            a.view_count, a.like_count, a.comment_count,
+            a.published_at, a.reading_time,
+            a.is_breaking, a.is_featured,
+            u.full_name  AS author_name,
+            c.name       AS category_name,
+            c.slug       AS category_slug,
+            c.color      AS category_color,
+            (
+              COUNT(av.id)    * 1.0 +
+              a.like_count    * 3.0 +
+              a.comment_count * 2.0
+            ) AS trend_score
           FROM articles a
-          JOIN users      u ON a.author_id   = u.id
-          JOIN categories c ON a.category_id = c.id
-          WHERE a.status      = 'published'
-            AND a.id         != ${id}
-            AND a.category_id = ${base.category_id}
-          ORDER BY a.published_at DESC
+          LEFT JOIN article_views av
+            ON a.id = av.article_id
+            AND av.created_at >= NOW() - ('7 days')::INTERVAL
+          LEFT JOIN users      u ON a.author_id   = u.id
+          LEFT JOIN categories c ON a.category_id = c.id
+          WHERE a.status = 'published'
+          GROUP BY a.id, u.id, c.id
+          ORDER BY trend_score DESC
           LIMIT 6
         `
+        return trending
       },
       TTL.DETAIL,
     )

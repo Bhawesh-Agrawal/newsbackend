@@ -12,7 +12,8 @@ const runMigration = async () => {
     console.log('Running migrations...');
 
     const files = [
-      '009_social_profiles.sql'
+      '009_social_profiles.sql',
+      '010_featured_breaking_timestamps.sql'
     ];
 
     for (const file of files) {

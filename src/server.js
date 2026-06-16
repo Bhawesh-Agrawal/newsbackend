@@ -3,6 +3,8 @@ import express       from 'express';
 import helmet        from 'helmet';
 import cookieParser  from 'cookie-parser';
 
+process.env.TZ = 'Asia/Kolkata';
+
 import sql                          from './config/database.js';
 import { errorHandler, notFound }   from './middleware/error.middleware.js';
 import { globalLimiter }            from './middleware/ratelimit.middleware.js';
