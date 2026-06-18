@@ -232,6 +232,7 @@ export const getArticles = async (req, res, next) => {
       FROM articles a
       JOIN users      u ON a.author_id   = u.id
       JOIN categories c ON a.category_id = c.id
+      ${category !== null ? sql`LEFT JOIN category_pins cp ON cp.article_id = a.id AND cp.category_id = c.id` : sql``}
       WHERE TRUE
         ${finalStatus !== null ? sql`AND a.status = ${finalStatus}`   : sql``}
         ${authorId    !== null ? sql`AND a.author_id = ${authorId}`   : sql``}
@@ -244,7 +245,7 @@ export const getArticles = async (req, res, next) => {
           ? sql`AND a.search_vector @@ plainto_tsquery('english', ${search})`
           : sql``
         }
-      ORDER BY a.published_at DESC NULLS LAST, a.created_at DESC
+      ORDER BY ${category !== null ? sql`cp.position ASC NULLS LAST, ` : sql``} a.published_at DESC NULLS LAST, a.created_at DESC
       LIMIT  ${limit}::int
       OFFSET ${offset}::int
     `
@@ -404,6 +405,7 @@ export const updateArticle = async (req, res, next) => {
     memCache.invalidate(`article:${article.slug}`)
     memCache.invalidate('articles:')
     memCache.invalidate('stats:')
+    memCache.invalidate('related:')
     if (finalStatus === 'published') {
       memCache.invalidate('trending:')
       scheduleAiProcessing(id, bodyText, tag_ids, title || article.title)
@@ -442,6 +444,7 @@ export const deleteArticle = async (req, res, next) => {
     memCache.invalidate('articles:')
     memCache.invalidate('stats:')
     memCache.invalidate('trending:')
+    memCache.invalidate('related:')
 
     return res.status(200).json({ success: true, message: 'Article deleted' })
 
