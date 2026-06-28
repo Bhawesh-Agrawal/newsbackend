@@ -9,7 +9,7 @@ import { submitToIndexNow } from '../utils/indexnow.js';
 
 // ── Shared article SELECT columns ─────────────────────────────────────────────
 const LIST_COLS = sql`
-  a.id, a.title, a.slug, a.subtitle, a.excerpt,
+  a.id, a.author_id, a.title, a.slug, a.subtitle, a.excerpt,
   a.cover_image, a.cover_crop, a.reading_time, a.status,
   a.is_featured, a.is_breaking,
   a.view_count, a.like_count, a.comment_count,
