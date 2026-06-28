@@ -10,6 +10,7 @@
 
 import sql from '../config/database.js';
 import { memCache } from '../utils/memCache.js';
+import { parsePagination } from '../utils/helpers.js';
 
 // ══════════════════════════════════════════════════════════════
 //  UPDATE PROFILE
@@ -231,7 +232,7 @@ export const getPublicProfile = async (req, res, next) => {
 export const getUserArticles = async (req, res, next) => {
   try {
     const { userId } = req.params
-    const { page = 1, limit = 20 } = req.query
+    const { page, limit, offset } = parsePagination(req.query)
 
     if (!userId) {
       return res.status(400).json({
@@ -240,14 +241,15 @@ export const getUserArticles = async (req, res, next) => {
       })
     }
 
-    const offset = (parseInt(page) - 1) * parseInt(limit)
-
     // Get total count
     const [{ count }] = await sql`
       SELECT COUNT(*) FROM articles
       WHERE author_id = ${userId}
         AND status = 'published'
     `
+
+    const total = parseInt(count)
+    const totalPages = Math.ceil(total / limit)
 
     // Get articles
     const articles = await sql`
@@ -262,6 +264,7 @@ export const getUserArticles = async (req, res, next) => {
         u.full_name as author_name,
         a.category_id,
         c.name as category_name,
+        c.slug as category_slug,
         c.color as category_color,
         a.reading_time,
         a.is_breaking,
@@ -269,7 +272,9 @@ export const getUserArticles = async (req, res, next) => {
         a.status,
         a.published_at,
         a.created_at,
-        (SELECT COUNT(*) FROM article_views WHERE article_id = a.id) as view_count,
+        a.view_count,
+        a.like_count,
+        a.comment_count,
         a.cover_crop
       FROM articles a
       LEFT JOIN users u ON a.author_id = u.id
@@ -277,17 +282,19 @@ export const getUserArticles = async (req, res, next) => {
       WHERE a.author_id = ${userId}
         AND a.status = 'published'
       ORDER BY a.published_at DESC
-      LIMIT ${parseInt(limit)} OFFSET ${offset}
+      LIMIT ${limit} OFFSET ${offset}
     `
 
     return res.status(200).json({
       success: true,
       data: articles,
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: count,
-        hasNextPage: offset + articles.length < count,
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNextPage: offset + articles.length < total,
+        hasPrevPage: page > 1,
       },
     })
   } catch (err) {
