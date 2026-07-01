@@ -232,6 +232,26 @@ app.get(`${API}/categories`, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+app.get(`${API}/categories/admin`, authenticate, isSuperAdmin, async (req, res, next) => {
+  try {
+    const data = await memCache.wrap(
+      'categories:admin',
+      () => sql`
+        SELECT
+          id, name, slug, description, color, sort_order, is_active,
+          (
+            SELECT COUNT(*)::int FROM articles
+            WHERE category_id = categories.id AND status = 'published'
+          ) AS article_count
+        FROM categories
+        ORDER BY sort_order ASC, name ASC
+      `,
+      15 * 60 * 1000
+    );
+    res.json({ success: true, data });
+  } catch (err) { next(err); }
+});
+
 app.post(`${API}/categories`, authenticate, isSuperAdmin, async (req, res, next) => {
   try {
     const { name, color = '#6366f1', sort_order = 0 } = req.body;
@@ -247,6 +267,7 @@ app.post(`${API}/categories`, authenticate, isSuperAdmin, async (req, res, next)
       RETURNING *
     `;
     memCache.invalidate('categories:all');
+    memCache.invalidate('categories:admin');
     res.status(201).json({ success: true, data: result[0] });
   } catch (err) {
     if (err.code === '23505') {
@@ -270,27 +291,22 @@ app.put(`${API}/categories/:id`, authenticate, isSuperAdmin, async (req, res, ne
     `;
     if (!result.length) return res.status(404).json({ success: false, message: 'Category not found' });
     memCache.invalidate('categories:all');
+    memCache.invalidate('categories:admin');
     res.json({ success: true, data: result[0] });
   } catch (err) { next(err); }
 });
 
 app.delete(`${API}/categories/:id`, authenticate, isSuperAdmin, async (req, res, next) => {
   try {
-    const articleCheck = await sql`
-      SELECT COUNT(*)::int AS count FROM articles WHERE category_id = ${req.params.id}
-    `;
-    if (articleCheck[0].count > 0) {
-      return res.status(400).json({
-        success: false,
-        message: `Cannot delete — ${articleCheck[0].count} articles are assigned to this category. Reassign them first.`,
-      });
-    }
     const result = await sql`
-      DELETE FROM categories WHERE id = ${req.params.id} RETURNING id, name
+      UPDATE categories SET is_active = FALSE
+      WHERE id = ${req.params.id} AND is_active = TRUE
+      RETURNING id, name
     `;
     if (!result.length) return res.status(404).json({ success: false, message: 'Category not found' });
     memCache.invalidate('categories:all');
-    res.json({ success: true, message: `Category "${result[0].name}" deleted` });
+    memCache.invalidate('categories:admin');
+    res.json({ success: true, message: `Category "${result[0].name}" archived` });
   } catch (err) { next(err); }
 });
 

@@ -129,6 +129,7 @@ export const createArticle = async (req, res, next) => {
       memCache.invalidate('articles:')
       memCache.invalidate('stats:')
       memCache.invalidate('trending:')
+      memCache.invalidate('home:')
       scheduleAiProcessing(article.id, bodyText, tag_ids, title)
       submitToIndexNow(article.slug)
     }
@@ -406,6 +407,7 @@ export const updateArticle = async (req, res, next) => {
     memCache.invalidate('articles:')
     memCache.invalidate('stats:')
     memCache.invalidate('related:')
+    memCache.invalidate('home:')
     if (finalStatus === 'published') {
       memCache.invalidate('trending:')
       scheduleAiProcessing(id, bodyText, tag_ids, title || article.title)
@@ -445,6 +447,7 @@ export const deleteArticle = async (req, res, next) => {
     memCache.invalidate('stats:')
     memCache.invalidate('trending:')
     memCache.invalidate('related:')
+    memCache.invalidate('home:')
 
     return res.status(200).json({ success: true, message: 'Article deleted' })
 
