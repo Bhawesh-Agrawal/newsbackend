@@ -290,6 +290,14 @@ app.put(`${API}/categories/:id`, authenticate, isSuperAdmin, async (req, res, ne
       RETURNING *
     `;
     if (!result.length) return res.status(404).json({ success: false, message: 'Category not found' });
+
+    if (is_active === true) {
+      await sql`
+        UPDATE articles SET status = archived_from_status, archived_from_status = NULL
+        WHERE category_id = ${req.params.id} AND archived_from_status IS NOT NULL
+      `;
+    }
+
     memCache.invalidate('categories:all');
     memCache.invalidate('categories:admin');
     res.json({ success: true, data: result[0] });
@@ -304,9 +312,15 @@ app.delete(`${API}/categories/:id`, authenticate, isSuperAdmin, async (req, res,
       RETURNING id, name
     `;
     if (!result.length) return res.status(404).json({ success: false, message: 'Category not found' });
+
+    const archived = await sql`
+      UPDATE articles SET status = 'archived', archived_from_status = status
+      WHERE category_id = ${req.params.id} AND status != 'archived'
+    `;
+
     memCache.invalidate('categories:all');
     memCache.invalidate('categories:admin');
-    res.json({ success: true, message: `Category "${result[0].name}" archived` });
+    res.json({ success: true, message: `Category "${result[0].name}" archived`, data: { archivedCount: archived.count } });
   } catch (err) { next(err); }
 });
 
