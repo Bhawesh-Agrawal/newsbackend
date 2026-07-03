@@ -6,6 +6,7 @@ import {
 import { generateSummary, generateTags } from '../services/ai.services.js';
 import { memCache, TTL } from '../utils/memCache.js';
 import { submitToIndexNow } from '../utils/indexnow.js';
+import { notifyN8n } from '../utils/n8nWebhook.js';
 
 // ── Shared article SELECT columns ─────────────────────────────────────────────
 const LIST_COLS = sql`
@@ -41,30 +42,46 @@ function sanitizeCrop(raw) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function scheduleAiProcessing(articleId, bodyText, tagIds, titleText) {
+export function scheduleAiProcessing(articleId, bodyText, tagIds, titleText, excerpt, coverImage) {
   (async () => {
     try {
-      const summary = await generateSummary(bodyText)
-      if (summary) {
-        await sql`UPDATE articles SET ai_summary = ${summary} WHERE id = ${articleId}`
+      let summary = null
+      try {
+        summary = await generateSummary(bodyText)
+        if (summary) {
+          await sql`UPDATE articles SET ai_summary = ${summary} WHERE id = ${articleId}`
+        }
+      } catch (err) {
+        console.error('[AI] Summary generation failed:', err.message)
       }
 
       if (!tagIds || tagIds.length === 0) {
-        const suggestedTags = await generateTags(titleText, bodyText)
-        for (const tagName of suggestedTags) {
-          const slug = generateSlug(tagName)
-          const tag  = await sql`
-            INSERT INTO tags (name, slug) VALUES (${tagName}, ${slug})
-            ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
-            RETURNING id
-          `
-          await sql`
-            INSERT INTO article_tags (article_id, tag_id)
-            VALUES (${articleId}, ${tag[0].id})
-            ON CONFLICT DO NOTHING
-          `
+        try {
+          const suggestedTags = await generateTags(titleText, bodyText)
+          for (const tagName of suggestedTags) {
+            const slug = generateSlug(tagName)
+            const tag  = await sql`
+              INSERT INTO tags (name, slug) VALUES (${tagName}, ${slug})
+              ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
+              RETURNING id
+            `
+            await sql`
+              INSERT INTO article_tags (article_id, tag_id)
+              VALUES (${articleId}, ${tag[0].id})
+              ON CONFLICT DO NOTHING
+            `
+          }
+        } catch (err) {
+          console.error('[AI] Tag generation failed:', err.message)
         }
       }
+
+      notifyN8n({
+        title: titleText,
+        ai_summary: summary,
+        excerpt,
+        cover_image: coverImage,
+      })
     } catch (err) {
       console.error('[AI] Post-publish processing failed:', err.message)
     }
@@ -130,7 +147,7 @@ export const createArticle = async (req, res, next) => {
       memCache.invalidate('stats:')
       memCache.invalidate('trending:')
       memCache.invalidate('home:')
-      scheduleAiProcessing(article.id, bodyText, tag_ids, title)
+      scheduleAiProcessing(article.id, bodyText, tag_ids, title, finalExcerpt, cover_image)
       submitToIndexNow(article.slug)
     }
 
@@ -410,7 +427,7 @@ export const updateArticle = async (req, res, next) => {
     memCache.invalidate('home:')
     if (finalStatus === 'published') {
       memCache.invalidate('trending:')
-      scheduleAiProcessing(id, bodyText, tag_ids, title || article.title)
+      scheduleAiProcessing(id, bodyText, tag_ids, title || article.title, excerpt || article.excerpt, cover_image || article.cover_image)
       submitToIndexNow(updated.slug)
     }
 

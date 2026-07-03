@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import sql from '../config/database.js';
 import { submitToIndexNow } from '../utils/indexnow.js';
 import { memCache } from '../utils/memCache.js';
+import { scheduleAiProcessing } from '../controllers/articles.controller.js';
 
 // ── Publish scheduled articles ────────────────────────────────────
 // Runs every minute
@@ -16,7 +17,7 @@ const publishScheduledArticles = async () => {
         breaking_at  = CASE WHEN is_breaking = TRUE THEN NOW() ELSE breaking_at END
       WHERE status       = 'scheduled'
         AND scheduled_at <= NOW()
-      RETURNING id, slug, title, scheduled_at
+      RETURNING id, slug, title, body_text, excerpt, cover_image, scheduled_at
     `;
 
     if (published.length > 0) {
@@ -24,6 +25,7 @@ const publishScheduledArticles = async () => {
       published.forEach(a => {
         console.log(`  - "${a.title}" (was scheduled for ${a.scheduled_at})`)
         submitToIndexNow(a.slug)
+        scheduleAiProcessing(a.id, a.body_text, [], a.title, a.excerpt, a.cover_image)
       });
     }
   } catch (err) {
