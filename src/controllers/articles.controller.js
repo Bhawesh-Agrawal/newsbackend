@@ -504,6 +504,7 @@ export const getTrendingArticles = async (req, res, next) => {
         LEFT JOIN users      u ON a.author_id   = u.id
         LEFT JOIN categories c ON a.category_id = c.id
         WHERE a.status = 'published'
+          AND a.published_at >= NOW() - (${days} || ' days')::INTERVAL
         GROUP BY a.id, u.id, c.id
         ORDER BY trend_score DESC
         LIMIT ${limit}
