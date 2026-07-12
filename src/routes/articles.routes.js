@@ -7,6 +7,7 @@ import {
 import { toggleLike, getLikeStatus }   from '../controllers/likes.controller.js';
 import { trackView }                   from '../controllers/views.controller.js';
 import { authenticate, optionalAuth, isAuthor, isSuperAdmin } from '../middleware/auth.middleware.js';
+import { engagementLimiter } from '../middleware/ratelimit.middleware.js';
 import { validate }                    from '../middleware/validate.middleware.js';
 import {
   createArticleValidator,
@@ -64,6 +65,6 @@ router.delete('/:id', authenticate, isAuthor, deleteArticle);
 // ── Engagement (personalised, never cached at CDN) ────────────────────────────
 router.post('/:id/like', optionalAuth, toggleLike);
 router.get('/:id/like',  optionalAuth, getLikeStatus);
-router.post('/:id/view', optionalAuth, trackView);
+router.post('/:id/view', engagementLimiter, optionalAuth, trackView);
 
 export default router;

@@ -330,9 +330,6 @@ export const getArticleBySlug = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Article not found' })
     }
 
-    sql`UPDATE articles SET view_count = view_count + 1 WHERE id = ${article.id}`
-      .catch(() => {})
-
     return res.status(200).json({ success: true, data: article })
 
   } catch (err) { next(err) }

@@ -13,9 +13,10 @@ export const getDashboardStats = async (req, res, next) => {
     const cached = await memCache.wrap(
       'stats:dashboard',
       async () => {
-        // All 7 queries are independent — run them in parallel.
+        // All 8 queries are independent — run them in parallel.
         const [
           articleStats,
+          viewsTotal,
           userStats,
           pendingComments,
           viewsTrend,
@@ -25,16 +26,22 @@ export const getDashboardStats = async (req, res, next) => {
         ] = await Promise.all([
 
           // 1. Article counts + engagement totals
+          //    total_views is computed from the article_views event log
+          //    (authoritative source) instead of the denormalised
+          //    articles.view_count which can drift due to race conditions.
           sql`
             SELECT
               COUNT(*)                                         AS total,
               COUNT(*) FILTER (WHERE status = 'published')    AS published,
               COUNT(*) FILTER (WHERE status = 'draft')        AS drafts,
               COUNT(*) FILTER (WHERE status = 'review')       AS in_review,
-              COALESCE(SUM(view_count),    0)                  AS total_views,
               COALESCE(SUM(like_count),    0)                  AS total_likes,
               COALESCE(SUM(comment_count), 0)                  AS total_comments
             FROM articles
+          `,
+          sql`
+            SELECT COUNT(*)::INT AS total_views
+            FROM article_views
           `,
 
           // 2. User counts
@@ -90,16 +97,20 @@ export const getDashboardStats = async (req, res, next) => {
           `,
 
           // 6. Views + article count broken down by category
+          //    total_views uses COUNT(av.id) from the event log for accuracy
           sql`
             SELECT
+              c.slug,
               c.name,
               c.color,
               COUNT(DISTINCT a.id)            AS article_count,
-              COALESCE(SUM(a.view_count), 0)  AS total_views
+              COUNT(av.id)::INT               AS total_views
             FROM categories c
             LEFT JOIN articles a
               ON  c.id = a.category_id
               AND a.status = 'published'
+            LEFT JOIN article_views av
+              ON  a.id = av.article_id
             GROUP BY c.id
             ORDER BY total_views DESC NULLS LAST
           `,
@@ -134,7 +145,7 @@ export const getDashboardStats = async (req, res, next) => {
         ]);
 
         return {
-          articles:        articleStats[0],
+          articles:        { ...articleStats[0], total_views: viewsTotal[0]?.total_views ?? 0 },
           users:           userStats[0],
           pendingComments: parseInt(pendingComments[0].count),
           viewsTrend,
@@ -154,7 +165,7 @@ export const getDashboardStats = async (req, res, next) => {
 };
 
 // ── getArticleAnalytics ───────────────────────────────────────────────────────
-// 4 independent queries → parallelised with Promise.all.
+// 7 independent queries → parallelised with Promise.all.
 // Cached per (article id × period) for 2 min.
 // The access-control check (does this user own the article, or are they
 // editor+?) runs against a tiny single-row lookup BEFORE the heavy queries
@@ -191,7 +202,7 @@ export const getArticleAnalytics = async (req, res, next) => {
       async () => {
         const intervalExpr = sql`(${period} * INTERVAL '1 day')`;
 
-        const [viewsPerDay, referrers, audienceBreakdown, totals] = await Promise.all([
+        const [viewsPerDay, referrers, audienceBreakdown, totals, viewsToday, viewsWeek, viewsMonth] = await Promise.all([
 
           // Views per day over the requested window
           sql`
@@ -229,11 +240,38 @@ export const getArticleAnalytics = async (req, res, next) => {
             WHERE article_id = ${id}
           `,
 
-          // Snapshot totals from the denormalised columns — much cheaper than
-          // COUNT(*) over article_views for a rough number
+          // Authoritative all-time view count from the event log
           sql`
-            SELECT view_count, like_count, comment_count
-            FROM articles WHERE id = ${id}
+            SELECT
+              COUNT(*)::INT                            AS view_count,
+              (SELECT like_count    FROM articles WHERE id = ${id}) AS like_count,
+              (SELECT comment_count FROM articles WHERE id = ${id}) AS comment_count
+            FROM article_views
+            WHERE article_id = ${id}
+          `,
+
+          // Views today
+          sql`
+            SELECT COUNT(*)::INT AS views
+            FROM article_views
+            WHERE article_id = ${id}
+              AND created_at >= date_trunc('day', NOW())
+          `,
+
+          // Views this week
+          sql`
+            SELECT COUNT(*)::INT AS views
+            FROM article_views
+            WHERE article_id = ${id}
+              AND created_at >= date_trunc('week', NOW())
+          `,
+
+          // Views this month
+          sql`
+            SELECT COUNT(*)::INT AS views
+            FROM article_views
+            WHERE article_id = ${id}
+              AND created_at >= date_trunc('month', NOW())
           `,
         ]);
 
@@ -242,6 +280,9 @@ export const getArticleAnalytics = async (req, res, next) => {
           viewsPerDay,
           referrers,
           audienceBreakdown: audienceBreakdown[0],
+          views_today:       viewsToday[0]?.views   ?? 0,
+          views_week:        viewsWeek[0]?.views     ?? 0,
+          views_month:       viewsMonth[0]?.views    ?? 0,
           period,
         };
       },
