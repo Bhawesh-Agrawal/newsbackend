@@ -25,7 +25,7 @@ const publishScheduledArticles = async () => {
       published.forEach(a => {
         console.log(`  - "${a.title}" (was scheduled for ${a.scheduled_at})`)
         submitToIndexNow(a.slug)
-        scheduleAiProcessing(a.id, a.body_text, [], a.title, a.excerpt, a.cover_image)
+        scheduleAiProcessing(a.id, a.body_text, [], a.title, a.excerpt, a.cover_image, a.slug)
       });
     }
   } catch (err) {

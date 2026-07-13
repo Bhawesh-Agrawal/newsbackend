@@ -83,7 +83,7 @@ export const reviewAction = async (req, res, next) => {
     memCache.invalidate('stats:')
     if (action === 'approve') {
       memCache.invalidate('trending:')
-      scheduleAiProcessing(id, existing.body_text, [], existing.title, existing.excerpt, existing.cover_image)
+      scheduleAiProcessing(id, existing.body_text, [], existing.title, existing.excerpt, existing.cover_image, updated.slug)
       submitToIndexNow(updated.slug)
     }
 

@@ -1,4 +1,5 @@
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
+const SITE_URL = process.env.SITE_URL || 'https://www.mangopeoplenews.com';
 
 export async function notifyN8n(article) {
   if (!N8N_WEBHOOK_URL) return;
@@ -7,6 +8,7 @@ export async function notifyN8n(article) {
     event: 'article_published',
     article: {
       title: article.title,
+      url: article.slug ? `${SITE_URL}/article/${article.slug}` : null,
       ai_summary: article.ai_summary || null,
       excerpt: article.excerpt || null,
       cover_image: article.cover_image || null,

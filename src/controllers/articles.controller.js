@@ -42,7 +42,7 @@ function sanitizeCrop(raw) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-export function scheduleAiProcessing(articleId, bodyText, tagIds, titleText, excerpt, coverImage) {
+export function scheduleAiProcessing(articleId, bodyText, tagIds, titleText, excerpt, coverImage, slug) {
   (async () => {
     try {
       let summary = null
@@ -78,6 +78,7 @@ export function scheduleAiProcessing(articleId, bodyText, tagIds, titleText, exc
 
       notifyN8n({
         title: titleText,
+        slug,
         ai_summary: summary,
         excerpt,
         cover_image: coverImage,
@@ -147,7 +148,7 @@ export const createArticle = async (req, res, next) => {
       memCache.invalidate('stats:')
       memCache.invalidate('trending:')
       memCache.invalidate('home:')
-      scheduleAiProcessing(article.id, bodyText, tag_ids, title, finalExcerpt, cover_image)
+      scheduleAiProcessing(article.id, bodyText, tag_ids, title, finalExcerpt, cover_image, article.slug)
       submitToIndexNow(article.slug)
     }
 
@@ -424,7 +425,7 @@ export const updateArticle = async (req, res, next) => {
     memCache.invalidate('home:')
     if (finalStatus === 'published') {
       memCache.invalidate('trending:')
-      scheduleAiProcessing(id, bodyText, tag_ids, title || article.title, excerpt || article.excerpt, cover_image || article.cover_image)
+      scheduleAiProcessing(id, bodyText, tag_ids, title || article.title, excerpt || article.excerpt, cover_image || article.cover_image, updated.slug || article.slug)
       submitToIndexNow(updated.slug)
     }
 
