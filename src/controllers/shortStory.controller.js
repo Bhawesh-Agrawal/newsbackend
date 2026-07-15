@@ -292,3 +292,62 @@ export const retryShortStory = async (req, res, next) => {
     next(err);
   }
 };
+
+// ── PATCH /admin/short-stories/:id — edit content fields ─────────
+
+export const editShortStory = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { title, author, short_story_content, hero_image_url } = req.body;
+
+    // Check at least one field provided
+    if (!title && !author && !short_story_content && !hero_image_url) {
+      return res.status(400).json({
+        success: false,
+        message: 'At least one editable field must be provided',
+      });
+    }
+
+    const [row] = await sql`
+      SELECT id FROM article_stories WHERE id = ${id}
+    `;
+    if (!row) {
+      return res.status(404).json({ success: false, message: 'Short story not found' });
+    }
+
+    const [updated] = await sql`
+      UPDATE article_stories SET
+        title              = COALESCE(${title || null}, title),
+        author             = COALESCE(${author || null}, author),
+        short_story_content = COALESCE(${short_story_content || null}, short_story_content),
+        hero_image_url     = COALESCE(${hero_image_url || null}, hero_image_url)
+      WHERE id = ${id}
+      RETURNING *
+    `;
+
+    res.json({ success: true, data: updated });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ── DELETE /admin/short-stories/:id — hard delete ────────────────
+
+export const deleteShortStory = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const [row] = await sql`
+      DELETE FROM article_stories WHERE id = ${id}
+      RETURNING id
+    `;
+
+    if (!row) {
+      return res.status(404).json({ success: false, message: 'Short story not found' });
+    }
+
+    res.json({ success: true, message: 'Short story deleted' });
+  } catch (err) {
+    next(err);
+  }
+};

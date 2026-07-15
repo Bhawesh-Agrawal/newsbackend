@@ -4,12 +4,15 @@ import { validate } from '../middleware/validate.middleware.js';
 import {
   submitShortStoryValidator,
   reviewShortStoryValidator,
+  editShortStoryValidator,
 } from '../validators/shortStory.validator.js';
 import {
   submitShortStory,
   getShortStories,
   reviewShortStory,
   retryShortStory,
+  editShortStory,
+  deleteShortStory,
 } from '../controllers/shortStory.controller.js';
 
 const router = Router();
@@ -32,6 +35,15 @@ router.patch(
   validate,
   reviewShortStory,
 );
+
+router.patch(
+  '/:id',
+  editShortStoryValidator,
+  validate,
+  editShortStory,
+);
+
+router.delete('/:id', deleteShortStory);
 
 router.post('/:id/retry', retryShortStory);
 
