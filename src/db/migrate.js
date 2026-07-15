@@ -12,8 +12,7 @@ const runMigration = async () => {
     console.log('Running migrations...');
 
     const files = [
-      '011_home_pinning.sql',
-      '012_category_archive_tracking.sql'
+      '013_article_stories.sql'
     ];
 
     for (const file of files) {

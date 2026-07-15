@@ -19,11 +19,13 @@ import uploadRoutes     from './routes/upload.routes.js';
 import savedRoutes      from './routes/saved.routes.js';
 import profileRoutes    from './routes/profile.routes.js';
 import homeRoutes       from './routes/home.routes.js';
+import shortStoryRoutes from './routes/shortStory.routes.js';
 
 import { authenticate }                        from './middleware/auth.middleware.js';
 import { isEditor, isSuperAdmin, isAuthor }    from './middleware/auth.middleware.js';
 
 import { getMarketData } from './controllers/market.controller.js';
+import { getPublicShortStories } from './controllers/shortStory.controller.js';
 
 import cors from 'cors';
 
@@ -166,10 +168,14 @@ app.use(`${API}/auth`,       authRoutes);
 app.use(`${API}/articles`,   articlesRoutes);
 app.use(`${API}/comments`,   commentsRoutes);
 app.use(`${API}/newsletter`, newsletterRoutes);
-app.use(`${API}/admin`,      adminRoutes);
+app.use(`${API}/admin`,              adminRoutes);
+app.use(`${API}/admin/short-stories`, shortStoryRoutes);
 app.use(`${API}/uploads`,    uploadRoutes);
 app.use(`${API}/users`,      authenticate, savedRoutes);
 app.use(`${API}/profile`,    authenticate, profileRoutes);
+
+// ── Public short stories (no auth) ────────────────────────────────
+app.get(`${API}/short-stories`, getPublicShortStories);
 
 // ── Tags — simple CRUD ────────────────────────────────────────────
 app.get(`${API}/tags`, async (req, res, next) => {

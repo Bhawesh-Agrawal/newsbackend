@@ -32,3 +32,4 @@ export async function notifyN8n(article) {
     console.error(`[n8n] Webhook failed for "${article.title}":`, err.message);
   }
 }
+  
