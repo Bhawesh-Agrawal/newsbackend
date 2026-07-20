@@ -176,7 +176,7 @@ export const getPublicShortStories = async (req, res, next) => {
         source_domain, created_at
       FROM article_stories
       WHERE admin_status = 'approved'
-        AND created_at >= NOW() - INTERVAL '${days} days'
+        AND created_at >= NOW() - (${days} || ' days')::INTERVAL
       ORDER BY created_at DESC
       LIMIT  ${limit}
       OFFSET ${offset}
@@ -185,7 +185,7 @@ export const getPublicShortStories = async (req, res, next) => {
     const [{ count }] = await sql`
       SELECT COUNT(*)::int AS count FROM article_stories
       WHERE admin_status = 'approved'
-        AND created_at >= NOW() - INTERVAL '${days} days'
+        AND created_at >= NOW() - (${days} || ' days')::INTERVAL
     `;
 
     res.json({
