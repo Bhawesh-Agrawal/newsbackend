@@ -1,6 +1,30 @@
 const MODEL = 'meta/llama-3.1-8b-instruct';
 const NVIDIA_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
 
+const BULLET_STRIP = /^[•●▪▸►➢→\-\*]\s*/;
+const BULLET_SPLIT = /[•●▪▸►➢→\-\*]\s*(?=[A-Z])/;
+
+function normalizeBullets(raw) {
+  if (raw.includes('\n')) {
+    return raw.split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((l) => `• ${l.replace(BULLET_STRIP, '')}`)
+      .join('\n');
+  }
+
+  const parts = raw.split(BULLET_SPLIT).map((s) => s.trim()).filter(Boolean);
+  const merged = [];
+  for (const part of parts) {
+    if (merged.length > 0 && /^[a-z]/.test(part)) {
+      merged[merged.length - 1] += ` • ${part}`;
+    } else {
+      merged.push(part);
+    }
+  }
+  return merged.map((p) => `• ${p.replace(BULLET_STRIP, '')}`).join('\n');
+}
+
 const STORY_PROMPT = (title, author, text) => `You are a news summarizer. Rewrite the following news article as 4 to 6 concise bullet points capturing the main facts.
 
 RULES:
@@ -55,7 +79,9 @@ export async function generateShortStory(rawText, title, author) {
       return result;
     }
 
-    result.shortStoryContent = content;
+    result.shortStoryContent = normalizeBullets(content);
+    console.log('[StoryGen] Raw response:\n', content);
+    console.log('[StoryGen] Normalized:\n', result.shortStoryContent);
     result.aiModelUsed = MODEL;
     return result;
   } catch (err) {

@@ -168,7 +168,13 @@ export const reviewShortStory = async (req, res, next) => {
 export const getPublicShortStories = async (req, res, next) => {
   try {
     const { page, limit, offset } = parsePagination(req.query);
-    const days = Math.min(30, Math.max(1, parseInt(req.query.days) || 3));
+    const days = req.query.days ? Math.min(365, Math.max(1, parseInt(req.query.days))) : null;
+    const excludeIds = req.query.exclude
+      ? req.query.exclude.split(',').filter(Boolean)
+      : [];
+
+    const daysCondition = days ? sql`AND created_at >= NOW() - (${days} || ' days')::INTERVAL` : sql``;
+    const excludeCondition = excludeIds.length > 0 ? sql`AND id != ALL(${excludeIds})` : sql``;
 
     const rows = await sql`
       SELECT
@@ -176,7 +182,8 @@ export const getPublicShortStories = async (req, res, next) => {
         source_domain, created_at
       FROM article_stories
       WHERE admin_status = 'approved'
-        AND created_at >= NOW() - (${days} || ' days')::INTERVAL
+        ${daysCondition}
+        ${excludeCondition}
       ORDER BY created_at DESC
       LIMIT  ${limit}
       OFFSET ${offset}
@@ -185,7 +192,8 @@ export const getPublicShortStories = async (req, res, next) => {
     const [{ count }] = await sql`
       SELECT COUNT(*)::int AS count FROM article_stories
       WHERE admin_status = 'approved'
-        AND created_at >= NOW() - (${days} || ' days')::INTERVAL
+        ${daysCondition}
+        ${excludeCondition}
     `;
 
     res.json({
