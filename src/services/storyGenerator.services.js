@@ -25,14 +25,14 @@ function normalizeBullets(raw) {
   return merged.map((p) => `• ${p.replace(BULLET_STRIP, '')}`).join('\n');
 }
 
-const STORY_PROMPT = (title, author, text) => `You are a news summarizer. Rewrite the following news article as 4 to 6 concise bullet points capturing the main facts.
+const STORY_PROMPT = (title, author, text) => `You are a news summarizer for a mobile "shorts" feed. Rewrite the following news article as exactly 3 to 4 ultra-concise bullet points capturing the main facts.
 
 RULES:
-- Total word count must be 80-100 words across ALL bullet points combined.
+- Total word count MUST be strictly 40-60 words across ALL bullet points combined. This is critical so it fits on a single mobile screen without scrolling.
 - Each bullet point must start with a bullet symbol "•" followed by a space.
+- Keep each bullet to 1-2 short sentences maximum.
 - Only use facts, names, and details explicitly present in the source text below. Do not invent or infer information.
 - Do not copy more than a few short phrases verbatim. Paraphrase throughout for copyright safety.
-- Each bullet should capture one key fact: who, what, when, where, why, or how.
 - No intros, no conclusions, no filler. Just the facts.
 
 Article Title: ${title || 'Unknown'}
