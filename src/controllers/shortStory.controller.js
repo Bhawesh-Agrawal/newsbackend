@@ -1,7 +1,20 @@
 import sql from '../config/database.js';
-import { parsePagination } from '../utils/helpers.js';
+import { parsePagination, generateSlug } from '../utils/helpers.js';
 import { extractArticle } from '../services/articleExtract.services.js';
 import { generateShortStory } from '../services/storyGenerator.services.js';
+
+// ── Helper: generate unique slug from title ────────────────────────
+
+async function createUniqueSlug(title) {
+  const baseSlug = generateSlug(title);
+  if (!baseSlug) return `story-${Date.now()}`;
+
+  const existing = await sql`SELECT id FROM article_stories WHERE slug = ${baseSlug}`;
+  if (existing.length > 0) {
+    return `${baseSlug}-${Date.now()}`;
+  }
+  return baseSlug;
+}
 
 // ── POST /admin/short-stories — submit URL, run full pipeline ────
 
@@ -50,7 +63,10 @@ export const submitShortStory = async (req, res, next) => {
       });
     }
 
-    // Extraction succeeded — update row with extracted data
+    // Generate slug from extracted title
+    const slug = await createUniqueSlug(extracted.title);
+
+    // Extraction succeeded — update row with extracted data + slug
     await sql`
       UPDATE article_stories SET
         title                 = ${extracted.title},
@@ -60,7 +76,8 @@ export const submitShortStory = async (req, res, next) => {
         hero_image_url        = ${extracted.heroImageUrl},
         additional_image_urls = ${extracted.additionalImageUrls ? JSON.stringify(extracted.additionalImageUrls) : null}::jsonb,
         extraction_method_used = ${extracted.extractionMethodUsed},
-        extraction_status     = 'success'
+        extraction_status     = 'success',
+        slug                  = ${slug}
       WHERE id = ${row.id}
     `;
 
@@ -103,7 +120,7 @@ export const getShortStories = async (req, res, next) => {
 
     const rows = await sql`
       SELECT
-        id, source_url, source_domain, title, author, published_at,
+        id, slug, source_url, source_domain, title, author, published_at,
         hero_image_url, short_story_content, extraction_method_used,
         extraction_status, failure_reason, ai_model_used,
         admin_status, admin_notes, reviewed_by, reviewed_at,
@@ -143,6 +160,15 @@ export const reviewShortStory = async (req, res, next) => {
     const { id } = req.params;
     const { admin_status, admin_notes } = req.body;
 
+    // If approving and story has no slug yet, generate one
+    if (admin_status === 'approved') {
+      const [story] = await sql`SELECT id, title, slug FROM article_stories WHERE id = ${id}`;
+      if (story && !story.slug && story.title) {
+        const slug = await createUniqueSlug(story.title);
+        await sql`UPDATE article_stories SET slug = ${slug} WHERE id = ${id}`;
+      }
+    }
+
     const [row] = await sql`
       UPDATE article_stories SET
         admin_status = ${admin_status},
@@ -178,7 +204,7 @@ export const getPublicShortStories = async (req, res, next) => {
 
     const rows = await sql`
       SELECT
-        id, title, author, short_story_content, hero_image_url,
+        id, slug, title, author, short_story_content, hero_image_url,
         source_domain, created_at
       FROM article_stories
       WHERE admin_status = 'approved'
@@ -206,6 +232,53 @@ export const getPublicShortStories = async (req, res, next) => {
         hasNextPage: rows.length === limit,
         hasPrevPage: page > 1,
       },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ── GET /short-stories/:slug (public) — single story by slug ─────
+
+export const getPublicShortStoryBySlug = async (req, res, next) => {
+  try {
+    const { slug } = req.params;
+
+    const [row] = await sql`
+      SELECT
+        id, slug, title, author, short_story_content, hero_image_url,
+        source_domain, source_url, created_at, updated_at
+      FROM article_stories
+      WHERE slug = ${slug}
+        AND admin_status = 'approved'
+    `;
+
+    if (!row) {
+      return res.status(404).json({ success: false, message: 'Story not found' });
+    }
+
+    res.json({ success: true, data: row });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ── GET /short-stories-sitemap (public) — sitemap data ───────────
+
+export const getShortStoriesSitemap = async (req, res, next) => {
+  try {
+    const rows = await sql`
+      SELECT slug, created_at, updated_at
+      FROM article_stories
+      WHERE admin_status = 'approved'
+        AND slug IS NOT NULL
+        AND created_at >= NOW() - INTERVAL '30 days'
+      ORDER BY created_at DESC
+    `;
+
+    res.json({
+      success: true,
+      data: rows,
     });
   } catch (err) {
     next(err);
@@ -259,6 +332,12 @@ export const retryShortStory = async (req, res, next) => {
       });
     }
 
+    // Generate slug if missing
+    let slug = row.slug;
+    if (!slug) {
+      slug = await createUniqueSlug(extracted.title);
+    }
+
     // Update with extracted data
     await sql`
       UPDATE article_stories SET
@@ -270,7 +349,8 @@ export const retryShortStory = async (req, res, next) => {
         additional_image_urls = ${extracted.additionalImageUrls ? JSON.stringify(extracted.additionalImageUrls) : null}::jsonb,
         extraction_method_used = ${extracted.extractionMethodUsed},
         extraction_status     = 'success',
-        failure_reason        = NULL
+        failure_reason        = NULL,
+        slug                  = ${slug}
       WHERE id = ${id}
     `;
 
@@ -320,10 +400,16 @@ export const editShortStory = async (req, res, next) => {
     }
 
     const [row] = await sql`
-      SELECT id FROM article_stories WHERE id = ${id}
+      SELECT id, slug FROM article_stories WHERE id = ${id}
     `;
     if (!row) {
       return res.status(404).json({ success: false, message: 'Short story not found' });
+    }
+
+    // Regenerate slug if title is being changed
+    let slug = row.slug;
+    if (title) {
+      slug = await createUniqueSlug(title);
     }
 
     const [updated] = await sql`
@@ -331,7 +417,8 @@ export const editShortStory = async (req, res, next) => {
         title              = COALESCE(${title || null}, title),
         author             = COALESCE(${author || null}, author),
         short_story_content = COALESCE(${short_story_content || null}, short_story_content),
-        hero_image_url     = COALESCE(${hero_image_url || null}, hero_image_url)
+        hero_image_url     = COALESCE(${hero_image_url || null}, hero_image_url),
+        slug               = ${slug}
       WHERE id = ${id}
       RETURNING *
     `;

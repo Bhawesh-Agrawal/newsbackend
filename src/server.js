@@ -25,7 +25,11 @@ import { authenticate }                        from './middleware/auth.middlewar
 import { isEditor, isSuperAdmin, isAuthor }    from './middleware/auth.middleware.js';
 
 import { getMarketData } from './controllers/market.controller.js';
-import { getPublicShortStories } from './controllers/shortStory.controller.js';
+import {
+  getPublicShortStories,
+  getPublicShortStoryBySlug,
+  getShortStoriesSitemap,
+} from './controllers/shortStory.controller.js';
 
 import cors from 'cors';
 
@@ -176,6 +180,8 @@ app.use(`${API}/profile`,    authenticate, profileRoutes);
 
 // ── Public short stories (no auth) ────────────────────────────────
 app.get(`${API}/short-stories`, getPublicShortStories);
+app.get(`${API}/short-stories-sitemap`, getShortStoriesSitemap);
+app.get(`${API}/short-stories/:slug`, getPublicShortStoryBySlug);
 
 // ── Tags — simple CRUD ────────────────────────────────────────────
 app.get(`${API}/tags`, async (req, res, next) => {

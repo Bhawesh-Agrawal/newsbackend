@@ -42,7 +42,7 @@ function sanitizeCrop(raw) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-export function scheduleAiProcessing(articleId, bodyText, tagIds, titleText, excerpt, coverImage, slug) {
+export function scheduleAiProcessing(articleId, bodyText, tagIds, titleText, excerpt, coverImage, slug, oldBodyText = null) {
   (async () => {
     try {
       let summary = null
@@ -77,12 +77,13 @@ export function scheduleAiProcessing(articleId, bodyText, tagIds, titleText, exc
       }
 
       notifyN8n({
+        id: articleId,
         title: titleText,
         slug,
         ai_summary: summary,
         excerpt,
         cover_image: coverImage,
-      })
+      }, oldBodyText, bodyText)
     } catch (err) {
       console.error('[AI] Post-publish processing failed:', err.message)
     }
@@ -425,7 +426,7 @@ export const updateArticle = async (req, res, next) => {
     memCache.invalidate('home:')
     if (finalStatus === 'published') {
       memCache.invalidate('trending:')
-      scheduleAiProcessing(id, bodyText, tag_ids, title || article.title, excerpt || article.excerpt, cover_image || article.cover_image, updated.slug || article.slug)
+      scheduleAiProcessing(id, bodyText, tag_ids, title || article.title, excerpt || article.excerpt, cover_image || article.cover_image, updated.slug || article.slug, article.body_text)
       submitToIndexNow(updated.slug)
     }
 

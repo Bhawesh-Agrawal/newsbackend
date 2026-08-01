@@ -1,8 +1,19 @@
+import { shouldThrottle, markNotified } from './webhookThrottle.js';
+
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
 const SITE_URL = process.env.SITE_URL || 'https://www.mangopeoplenews.com';
 
-export async function notifyN8n(article) {
+export async function notifyN8n(article, oldBodyText = null, newBodyText = null) {
   if (!N8N_WEBHOOK_URL) return;
+
+  const articleId = article.id || article.slug;
+
+  // Throttle check: skip if cooldown active or changes are too small
+  const { throttle, reason } = shouldThrottle(articleId, oldBodyText, newBodyText);
+  if (throttle) {
+    console.log(`[n8n] Skipped "${article.title}" — ${reason}`);
+    return;
+  }
 
   const payload = {
     event: 'article_published',
@@ -26,6 +37,7 @@ export async function notifyN8n(article) {
       const body = await res.text().catch(() => '');
       console.error(`[n8n] HTTP ${res.status}: ${body}`);
     } else {
+      markNotified(articleId);
       console.log(`[n8n] Webhook sent for "${article.title}"`);
     }
   } catch (err) {
