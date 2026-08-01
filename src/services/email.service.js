@@ -164,7 +164,7 @@ export const sendConfirmationEmail = async (email, name, token) => {
   const body = `
     ${logoBadge()}
     ${heading(`Almost there${name ? `, ${name}` : ''}!`)}
-    ${subtext('You\'re one click away from joining the <strong>Mango People News</strong> community. Confirm your email address to start receiving our latest stories.')}
+    ${subtext('You\'re one click away from joining the <strong>Mango People News</strong> community. Confirm your email address to start receiving our latest Mango Bites.')}
     ${ctaButton(confirmUrl, 'Confirm Subscription')}
     ${note('This link expires in <strong>24 hours</strong>. If you didn\'t subscribe, you can safely ignore this email.')}
     ${linkFallback(confirmUrl)}

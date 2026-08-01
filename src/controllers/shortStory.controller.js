@@ -16,7 +16,7 @@ async function createUniqueSlug(title) {
   return baseSlug;
 }
 
-// ── POST /admin/short-stories — submit URL, run full pipeline ────
+// ── POST /admin/mango-bites — submit URL, run full pipeline ─────
 
 export const submitShortStory = async (req, res, next) => {
   try {
@@ -111,7 +111,7 @@ export const submitShortStory = async (req, res, next) => {
   }
 };
 
-// ── GET /admin/short-stories — list pending review ───────────────
+// ── GET /admin/mango-bites — list pending review ────────────────
 
 export const getShortStories = async (req, res, next) => {
   try {
@@ -153,7 +153,7 @@ export const getShortStories = async (req, res, next) => {
   }
 };
 
-// ── PATCH /admin/short-stories/:id/review — approve/reject ───────
+// ── PATCH /admin/mango-bites/:id/review — approve/reject ─────────
 
 export const reviewShortStory = async (req, res, next) => {
   try {
@@ -180,7 +180,7 @@ export const reviewShortStory = async (req, res, next) => {
     `;
 
     if (!row) {
-      return res.status(404).json({ success: false, message: 'Short story not found' });
+      return res.status(404).json({ success: false, message: 'Mango Bite not found' });
     }
 
     res.json({ success: true, data: row });
@@ -189,7 +189,7 @@ export const reviewShortStory = async (req, res, next) => {
   }
 };
 
-// ── GET /short-stories (public) — approved only ──────────────────
+// ── GET /mango-bites (public) — approved only ───────────────────
 
 export const getPublicShortStories = async (req, res, next) => {
   try {
@@ -238,7 +238,7 @@ export const getPublicShortStories = async (req, res, next) => {
   }
 };
 
-// ── GET /short-stories/:slug (public) — single story by slug ─────
+// ── GET /mango-bites/:slug (public) — single Mango Bite by slug ─
 
 export const getPublicShortStoryBySlug = async (req, res, next) => {
   try {
@@ -254,7 +254,7 @@ export const getPublicShortStoryBySlug = async (req, res, next) => {
     `;
 
     if (!row) {
-      return res.status(404).json({ success: false, message: 'Story not found' });
+      return res.status(404).json({ success: false, message: 'Mango Bite not found' });
     }
 
     res.json({ success: true, data: row });
@@ -263,7 +263,7 @@ export const getPublicShortStoryBySlug = async (req, res, next) => {
   }
 };
 
-// ── GET /short-stories-sitemap (public) — sitemap data ───────────
+// ── GET /mango-bites-sitemap (public) — sitemap data ─────────────
 
 export const getShortStoriesSitemap = async (req, res, next) => {
   try {
@@ -285,7 +285,7 @@ export const getShortStoriesSitemap = async (req, res, next) => {
   }
 };
 
-// ── POST /admin/short-stories/:id/retry — re-run pipeline ────────
+// ── POST /admin/mango-bites/:id/retry — re-run pipeline ──────────
 
 export const retryShortStory = async (req, res, next) => {
   try {
@@ -295,13 +295,13 @@ export const retryShortStory = async (req, res, next) => {
       SELECT * FROM article_stories WHERE id = ${id}
     `;
     if (!row) {
-      return res.status(404).json({ success: false, message: 'Short story not found' });
+      return res.status(404).json({ success: false, message: 'Mango Bite not found' });
     }
 
     if (row.extraction_status !== 'failed' && row.extraction_status !== 'partial') {
       return res.status(400).json({
         success: false,
-        message: 'Can only retry stories with "failed" or "partial" extraction status',
+        message: 'Can only retry Mango Bites with "failed" or "partial" extraction status',
       });
     }
 
@@ -384,7 +384,7 @@ export const retryShortStory = async (req, res, next) => {
   }
 };
 
-// ── PATCH /admin/short-stories/:id — edit content fields ─────────
+// ── PATCH /admin/mango-bites/:id — edit content fields ───────────
 
 export const editShortStory = async (req, res, next) => {
   try {
@@ -403,7 +403,7 @@ export const editShortStory = async (req, res, next) => {
       SELECT id, slug FROM article_stories WHERE id = ${id}
     `;
     if (!row) {
-      return res.status(404).json({ success: false, message: 'Short story not found' });
+      return res.status(404).json({ success: false, message: 'Mango Bite not found' });
     }
 
     // Regenerate slug if title is being changed
@@ -429,7 +429,7 @@ export const editShortStory = async (req, res, next) => {
   }
 };
 
-// ── DELETE /admin/short-stories/:id — hard delete ────────────────
+// ── DELETE /admin/mango-bites/:id — hard delete ──────────────────
 
 export const deleteShortStory = async (req, res, next) => {
   try {
@@ -441,10 +441,10 @@ export const deleteShortStory = async (req, res, next) => {
     `;
 
     if (!row) {
-      return res.status(404).json({ success: false, message: 'Short story not found' });
+      return res.status(404).json({ success: false, message: 'Mango Bite not found' });
     }
 
-    res.json({ success: true, message: 'Short story deleted' });
+    res.json({ success: true, message: 'Mango Bite deleted' });
   } catch (err) {
     next(err);
   }

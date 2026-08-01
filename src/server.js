@@ -173,15 +173,15 @@ app.use(`${API}/articles`,   articlesRoutes);
 app.use(`${API}/comments`,   commentsRoutes);
 app.use(`${API}/newsletter`, newsletterRoutes);
 app.use(`${API}/admin`,              adminRoutes);
-app.use(`${API}/admin/short-stories`, shortStoryRoutes);
+app.use(`${API}/admin/mango-bites`, shortStoryRoutes);
 app.use(`${API}/uploads`,    uploadRoutes);
 app.use(`${API}/users`,      authenticate, savedRoutes);
 app.use(`${API}/profile`,    authenticate, profileRoutes);
 
-// ── Public short stories (no auth) ────────────────────────────────
-app.get(`${API}/short-stories`, getPublicShortStories);
-app.get(`${API}/short-stories-sitemap`, getShortStoriesSitemap);
-app.get(`${API}/short-stories/:slug`, getPublicShortStoryBySlug);
+// ── Public Mango Bites (no auth) ──────────────────────────────────
+app.get(`${API}/mango-bites`, getPublicShortStories);
+app.get(`${API}/mango-bites-sitemap`, getShortStoriesSitemap);
+app.get(`${API}/mango-bites/:slug`, getPublicShortStoryBySlug);
 
 // ── Tags — simple CRUD ────────────────────────────────────────────
 app.get(`${API}/tags`, async (req, res, next) => {
