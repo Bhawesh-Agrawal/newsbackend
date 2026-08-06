@@ -3,41 +3,64 @@ import { automod } from '../utils/Automod.js';
 
 export const createComment = async (req, res, next) => {
   try {
-    const { article_id, body, parent_id } = req.body;
+    const { article_id, video_article_id, body, parent_id } = req.body;
 
-    // ── 1. Validate article exists and is published ──────────────
-    const articles = await sql`
-      SELECT id FROM articles WHERE id = ${article_id} AND status = 'published'
-    `;
-
-    if (articles.length === 0) {
-      return res.status(404).json({
+    // Validate that exactly one content type is provided
+    if (!article_id && !video_article_id) {
+      return res.status(400).json({
         success: false,
-        message: 'Article not found',
+        message: 'Either article_id or video_article_id is required',
       });
+    }
+
+    if (article_id && video_article_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Provide only one of article_id or video_article_id, not both',
+      });
+    }
+
+    // ── 1. Validate content exists and is published ──────────────
+    if (article_id) {
+      const articles = await sql`
+        SELECT id FROM articles WHERE id = ${article_id} AND status = 'published'
+      `;
+      if (articles.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Article not found',
+        });
+      }
+    } else {
+      const videos = await sql`
+        SELECT id FROM video_articles WHERE id = ${video_article_id} AND status = 'published'
+      `;
+      if (videos.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Video article not found',
+        });
+      }
     }
 
     // ── 2. Validate parent comment if this is a reply ────────────
     if (parent_id) {
-      const parent = await sql`
-        SELECT id FROM comments
-        WHERE id = ${parent_id} AND article_id = ${article_id}
-      `;
+      const parent = article_id
+        ? await sql`SELECT id FROM comments WHERE id = ${parent_id} AND article_id = ${article_id}`
+        : await sql`SELECT id FROM comments WHERE id = ${parent_id} AND video_article_id = ${video_article_id}`;
 
       if (parent.length === 0) {
         return res.status(404).json({
           success: false,
-          message: 'Parent comment not found for this article',
+          message: 'Parent comment not found for this content',
         });
       }
     }
 
     // ── 3. Run auto-moderation ───────────────────────────────────
-    // Returns { status: 'approved' | 'pending' | 'spam', reason?: string }
     const modResult = automod(body);
 
     if (modResult.status === 'spam') {
-      // Hard block — don't even insert spam into the DB
       return res.status(422).json({
         success: false,
         message: 'Your comment could not be posted. Please review its content.',
@@ -45,26 +68,47 @@ export const createComment = async (req, res, next) => {
     }
 
     // ── 4. Insert with auto-determined status ────────────────────
-    const result = await sql`
-      INSERT INTO comments (article_id, user_id, parent_id, body, ip_address, status)
-      VALUES (
-        ${article_id},
-        ${req.user.id},
-        ${parent_id || null},
-        ${body},
-        ${req.ip},
-        ${modResult.status}
-      )
-      RETURNING *
-    `;
+    const result = article_id
+      ? await sql`
+          INSERT INTO comments (article_id, user_id, parent_id, body, ip_address, status)
+          VALUES (
+            ${article_id},
+            ${req.user.id},
+            ${parent_id || null},
+            ${body},
+            ${req.ip},
+            ${modResult.status}
+          )
+          RETURNING *
+        `
+      : await sql`
+          INSERT INTO comments (video_article_id, user_id, parent_id, body, ip_address, status)
+          VALUES (
+            ${video_article_id},
+            ${req.user.id},
+            ${parent_id || null},
+            ${body},
+            ${req.ip},
+            ${modResult.status}
+          )
+          RETURNING *
+        `;
 
-    // ── 5. If auto-approved, increment article comment count ─────
+    // ── 5. If auto-approved, increment comment count ─────────────
     if (modResult.status === 'approved') {
-      await sql`
-        UPDATE articles
-        SET comment_count = comment_count + 1
-        WHERE id = ${article_id}
-      `;
+      if (article_id) {
+        await sql`
+          UPDATE articles
+          SET comment_count = comment_count + 1
+          WHERE id = ${article_id}
+        `;
+      } else {
+        await sql`
+          UPDATE video_articles
+          SET comment_count = comment_count + 1
+          WHERE id = ${video_article_id}
+        `;
+      }
     }
 
     const message =
@@ -85,27 +129,47 @@ export const createComment = async (req, res, next) => {
 
 export const getComments = async (req, res, next) => {
   try {
-    const { article_id } = req.params;
+    const { article_id, video_article_id } = req.params;
+
+    const isVideo = !!video_article_id;
+    const contentId = article_id || video_article_id;
 
     // ── IMPORTANT: alias must match the Comment type on the frontend ──
-    // Frontend expects: author_name, author_avatar (not user_name, avatar_url)
-    const comments = await sql`
-      SELECT
-        c.id,
-        c.body,
-        c.like_count,
-        c.is_pinned,
-        c.created_at,
-        u.id                                   AS user_id,
-        COALESCE(u.full_name, 'Anonymous')     AS author_name,
-        u.avatar_url                           AS author_avatar
-      FROM comments c
-      LEFT JOIN users u ON c.user_id = u.id
-      WHERE c.article_id = ${article_id}
-        AND c.status     = 'approved'
-        AND c.parent_id  IS NULL
-      ORDER BY c.is_pinned DESC, c.created_at ASC
-    `;
+    const comments = isVideo
+      ? await sql`
+          SELECT
+            c.id,
+            c.body,
+            c.like_count,
+            c.is_pinned,
+            c.created_at,
+            u.id                                   AS user_id,
+            COALESCE(u.full_name, 'Anonymous')     AS author_name,
+            u.avatar_url                           AS author_avatar
+          FROM comments c
+          LEFT JOIN users u ON c.user_id = u.id
+          WHERE c.video_article_id = ${contentId}
+            AND c.status     = 'approved'
+            AND c.parent_id  IS NULL
+          ORDER BY c.is_pinned DESC, c.created_at ASC
+        `
+      : await sql`
+          SELECT
+            c.id,
+            c.body,
+            c.like_count,
+            c.is_pinned,
+            c.created_at,
+            u.id                                   AS user_id,
+            COALESCE(u.full_name, 'Anonymous')     AS author_name,
+            u.avatar_url                           AS author_avatar
+          FROM comments c
+          LEFT JOIN users u ON c.user_id = u.id
+          WHERE c.article_id = ${contentId}
+            AND c.status     = 'approved'
+            AND c.parent_id  IS NULL
+          ORDER BY c.is_pinned DESC, c.created_at ASC
+        `;
 
     // For each top-level comment, fetch its approved replies
     for (const comment of comments) {
@@ -223,7 +287,7 @@ export const deleteComment = async (req, res, next) => {
     const { id } = req.params;
 
     const existing = await sql`
-      SELECT user_id, article_id, status FROM comments WHERE id = ${id}
+      SELECT user_id, article_id, video_article_id, status FROM comments WHERE id = ${id}
     `;
 
     if (existing.length === 0) {
@@ -242,11 +306,19 @@ export const deleteComment = async (req, res, next) => {
 
     // Decrement count only if it was approved (it was visible to the public)
     if (comment.status === 'approved') {
-      await sql`
-        UPDATE articles
-        SET comment_count = GREATEST(0, comment_count - 1)
-        WHERE id = ${comment.article_id}
-      `;
+      if (comment.article_id) {
+        await sql`
+          UPDATE articles
+          SET comment_count = GREATEST(0, comment_count - 1)
+          WHERE id = ${comment.article_id}
+        `;
+      } else if (comment.video_article_id) {
+        await sql`
+          UPDATE video_articles
+          SET comment_count = GREATEST(0, comment_count - 1)
+          WHERE id = ${comment.video_article_id}
+        `;
+      }
     }
 
     return res.status(200).json({ success: true, message: 'Comment deleted' });

@@ -2,8 +2,14 @@ import { body } from 'express-validator';
 
 export const createCommentValidator = [
   body('article_id')
+    .optional()
     .isUUID()
     .withMessage('Valid article ID is required'),
+
+  body('video_article_id')
+    .optional()
+    .isUUID()
+    .withMessage('Valid video article ID is required'),
 
   body('body')
     .trim()

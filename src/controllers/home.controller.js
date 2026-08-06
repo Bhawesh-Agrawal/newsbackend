@@ -197,14 +197,46 @@ async function fetchCategoryArticles() {
   return result;
 }
 
+const VIDEO_LIST_COLS = sql`
+  va.id, va.title, va.slug, va.subtitle, va.excerpt,
+  va.cover_image, va.reading_time, va.status,
+  va.video_type, va.video_provider, va.video_duration,
+  va.is_featured, va.is_breaking,
+  va.view_count, va.like_count, va.comment_count,
+  va.published_at, va.created_at,
+  va.ai_summary,
+  u.full_name  AS author_name,
+  u.avatar_url AS author_avatar,
+  c.name  AS category_name,
+  c.slug  AS category_slug,
+  c.color AS category_color
+`;
+
+async function fetchRecentVideoArticles() {
+  return memCache.wrap(
+    'home:recentVideos:6',
+    () => sql`
+      SELECT ${VIDEO_LIST_COLS}
+      FROM video_articles va
+      JOIN users      u ON va.author_id   = u.id
+      JOIN categories c ON va.category_id = c.id
+      WHERE va.status = 'published'
+      ORDER BY va.published_at DESC NULLS LAST, va.created_at DESC
+      LIMIT 6
+    `,
+    TTL.LIST
+  );
+}
+
 export const getHomeData = async (req, res, next) => {
   try {
-    const [categories, pinnedHero, recent, aiSummaries, categoryArticles] = await Promise.all([
+    const [categories, pinnedHero, recent, aiSummaries, categoryArticles, recentVideos] = await Promise.all([
       fetchCategories(),
       fetchHeroPins(),
       fetchRecentArticles(),
       fetchAiSummaries(),
       fetchCategoryArticles(),
+      fetchRecentVideoArticles(),
     ]);
 
     // Warm the market quotes cache in background for the dedicated /market endpoint
@@ -223,6 +255,7 @@ export const getHomeData = async (req, res, next) => {
         hero,                       // pinned + auto-fill, up to 9
         aiSummaries,
         categoryArticles,
+        recentVideos,               // latest 6 video articles
         marketQuotes: [],           // fetched separately by the client
       },
     });

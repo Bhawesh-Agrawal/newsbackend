@@ -198,9 +198,13 @@ export const getPublicShortStories = async (req, res, next) => {
     const excludeIds = req.query.exclude
       ? req.query.exclude.split(',').filter(Boolean)
       : [];
+    const search = req.query.search?.trim() || null;
 
     const daysCondition = days ? sql`AND created_at >= NOW() - (${days} || ' days')::INTERVAL` : sql``;
     const excludeCondition = excludeIds.length > 0 ? sql`AND id != ALL(${excludeIds})` : sql``;
+    const searchCondition = search
+      ? sql`AND (title ILIKE ${'%' + search + '%'} OR short_story_content ILIKE ${'%' + search + '%'})`
+      : sql``;
 
     const rows = await sql`
       SELECT
@@ -210,6 +214,7 @@ export const getPublicShortStories = async (req, res, next) => {
       WHERE admin_status = 'approved'
         ${daysCondition}
         ${excludeCondition}
+        ${searchCondition}
       ORDER BY created_at DESC
       LIMIT  ${limit}
       OFFSET ${offset}
@@ -220,6 +225,7 @@ export const getPublicShortStories = async (req, res, next) => {
       WHERE admin_status = 'approved'
         ${daysCondition}
         ${excludeCondition}
+        ${searchCondition}
     `;
 
     res.json({

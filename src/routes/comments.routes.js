@@ -13,6 +13,7 @@ import {
 const router = Router();
 
 router.get('/article/:article_id',   getComments);
+router.get('/video/:video_article_id', getComments);
 router.post('/',                      authenticate, createCommentValidator, validate, createComment);
 router.delete('/:id',                 authenticate, deleteComment);
 router.get('/queue',                  authenticate, isEditor, getCommentQueue);

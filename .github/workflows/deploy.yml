@@ -1,0 +1,49 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [main]
+
+env:
+  PROJECT_ID: mango-people-news-504608
+  REGION: us-central1
+  SERVICE: mangopeople-backend
+  IMAGE: us-central1-docker.pkg.dev/mango-people-news-504608/mangopeople-repo/backend
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/808320850054/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+          service_account: 'github-actions@mango-people-news-504608.iam.gserviceaccount.com'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker $REGION-docker.pkg.dev --quiet
+
+      - name: Build and Push
+        run: |
+          docker build -t $IMAGE:${{ github.sha }} .
+          docker push $IMAGE:${{ github.sha }}
+          docker tag $IMAGE:${{ github.sha }} $IMAGE:latest
+          docker push $IMAGE:latest
+
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE }}
+          region: ${{ env.REGION }}
+          image: ${{ env.IMAGE }}:${{ github.sha }}

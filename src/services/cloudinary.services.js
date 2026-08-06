@@ -184,8 +184,89 @@ function _streamToCloudinary(buffer, options) {
   });
 }
 
+// ─────────────────────────────────────────────────────────────
+//  VIDEO UPLOAD — multer memoryStorage + manual upload_stream
+//
+//  Videos use resource_type:'video' for Cloudinary's video pipeline.
+//  Memory storage lets us stream the buffer to Cloudinary.
+//  Max size: 1 GB (news clips + longer segments).
+// ─────────────────────────────────────────────────────────────
+const GB = 1024 * 1024 * 1024;
+
+const _videoMemUpload = multer({
+  storage: multer.memoryStorage(),
+  limits:  { fileSize: 1 * GB },
+  fileFilter(_req, file, cb) {
+    const allowed = [
+      'video/mp4',
+      'video/webm',
+      'video/quicktime',       // .mov
+      'video/x-msvideo',       // .avi
+      'video/x-matroska',      // .mkv
+      'application/octet-stream', // fallback
+    ];
+    if (allowed.includes(file.mimetype)) return cb(null, true);
+    cb(new Error(`Unsupported video type: ${file.mimetype}. Use MP4, WebM, or MOV.`));
+  },
+}).single('video');
+
+export function uploadVideoToCloudinary(req, res, next) {
+  const ct = req.headers['content-type'] ?? '';
+
+  if (!ct.includes('multipart/form-data')) {
+    return res.status(400).json({
+      success: false,
+      message:
+        'Request must be multipart/form-data. ' +
+        'Do not set Content-Type manually when using FormData — ' +
+        'let the browser/axios set it automatically (it includes the boundary).',
+    });
+  }
+
+  _videoMemUpload(req, res, async (multerErr) => {
+    if (multerErr) {
+      const message = multerErr.code === 'LIMIT_FILE_SIZE'
+        ? 'File too large. Maximum size is 1 GB.'
+        : multerErr.message ?? 'Upload failed.';
+      return res.status(400).json({ success: false, message });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file received. Send the video as form-data with field name "video".',
+      });
+    }
+
+    const uploadOptions = {
+      folder:          'news-platform/videos',
+      resource_type:   'video',
+      allowed_formats: ['mp4', 'webm', 'mov', 'avi', 'mkv'],
+      public_id:       `video_${Date.now()}`,
+    };
+
+    try {
+      const result = await _streamToCloudinary(req.file.buffer, uploadOptions);
+
+      req.file.path       = result.secure_url;
+      req.file.filename   = result.public_id;
+      req.file.duration   = result.duration;    // seconds
+      req.file.bytes      = result.bytes;
+      req.file.format     = result.format;
+      next();
+    } catch (err) {
+      console.error('[Cloudinary Video] Upload stream failed:', err.message);
+      return res.status(500).json({
+        success: false,
+        message: 'Video upload failed. Please try again.',
+      });
+    }
+  });
+}
+
 // ── Delete a Cloudinary asset ─────────────────────────────────
 // Pass resourceType:'raw' when deleting an SVG avatar
+// Pass resourceType:'video' when deleting a video
 export const deleteImage = async (publicId, resourceType = 'image') => {
   try {
     await cloudinary.uploader.destroy(publicId, { resource_type: resourceType });

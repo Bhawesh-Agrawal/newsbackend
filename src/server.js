@@ -20,6 +20,7 @@ import savedRoutes      from './routes/saved.routes.js';
 import profileRoutes    from './routes/profile.routes.js';
 import homeRoutes       from './routes/home.routes.js';
 import shortStoryRoutes from './routes/shortStory.routes.js';
+import videoArticleRoutes from './routes/videoArticle.routes.js';
 
 import { authenticate }                        from './middleware/auth.middleware.js';
 import { isEditor, isSuperAdmin, isAuthor }    from './middleware/auth.middleware.js';
@@ -170,6 +171,7 @@ app.get('/meta/category/:slug', renderCategoryMeta);
 // ── API Routes ────────────────────────────────────────────────────
 app.use(`${API}/auth`,       authRoutes);
 app.use(`${API}/articles`,   articlesRoutes);
+app.use(`${API}/videos`,     videoArticleRoutes);
 app.use(`${API}/comments`,   commentsRoutes);
 app.use(`${API}/newsletter`, newsletterRoutes);
 app.use(`${API}/admin`,              adminRoutes);

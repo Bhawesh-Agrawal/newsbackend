@@ -13,9 +13,10 @@ export const getDashboardStats = async (req, res, next) => {
     const cached = await memCache.wrap(
       'stats:dashboard',
       async () => {
-        // All 8 queries are independent — run them in parallel.
+        // All queries are independent — run them in parallel.
         const [
           articleStats,
+          videoStats,
           viewsTotal,
           userStats,
           pendingComments,
@@ -26,9 +27,6 @@ export const getDashboardStats = async (req, res, next) => {
         ] = await Promise.all([
 
           // 1. Article counts + engagement totals
-          //    total_views is computed from the article_views event log
-          //    (authoritative source) instead of the denormalised
-          //    articles.view_count which can drift due to race conditions.
           sql`
             SELECT
               COUNT(*)                                         AS total,
@@ -39,12 +37,26 @@ export const getDashboardStats = async (req, res, next) => {
               COALESCE(SUM(comment_count), 0)                  AS total_comments
             FROM articles
           `,
+
+          // 2. Video article counts + engagement totals
+          sql`
+            SELECT
+              COUNT(*)                                         AS total,
+              COUNT(*) FILTER (WHERE status = 'published')    AS published,
+              COUNT(*) FILTER (WHERE status = 'draft')        AS drafts,
+              COUNT(*) FILTER (WHERE status = 'review')       AS in_review,
+              COALESCE(SUM(like_count),    0)                  AS total_likes,
+              COALESCE(SUM(comment_count), 0)                  AS total_comments
+            FROM video_articles
+          `,
+
+          // 3. Total views (both articles and video articles)
           sql`
             SELECT COUNT(*)::INT AS total_views
             FROM article_views
           `,
 
-          // 2. User counts
+          // 4. User counts
           sql`
             SELECT
               COUNT(*)                                                 AS total,
@@ -54,13 +66,13 @@ export const getDashboardStats = async (req, res, next) => {
             FROM users
           `,
 
-          // 3. Pending comment count
+          // 5. Pending comment count
           sql`
             SELECT COUNT(*) AS count
             FROM comments WHERE status = 'pending'
           `,
 
-          // 4. Views per day — last 30 days (line chart)
+          // 6. Views per day — last 30 days (line chart)
           sql`
             SELECT
               DATE_TRUNC('day', created_at)::DATE AS date,
@@ -71,7 +83,7 @@ export const getDashboardStats = async (req, res, next) => {
             ORDER BY date ASC
           `,
 
-          // 5. Top 5 articles by views this month
+          // 7. Top 5 articles by views this month
           sql`
             SELECT
               a.id,
@@ -96,8 +108,7 @@ export const getDashboardStats = async (req, res, next) => {
             LIMIT 5
           `,
 
-          // 6. Views + article count broken down by category
-          //    total_views uses COUNT(av.id) from the event log for accuracy
+          // 8. Views + article count broken down by category
           sql`
             SELECT
               c.slug,
@@ -115,7 +126,7 @@ export const getDashboardStats = async (req, res, next) => {
             ORDER BY total_views DESC NULLS LAST
           `,
 
-          // 7. Recent activity — last 10 events across articles + comments
+          // 9. Recent activity — last 10 events across articles, video articles, and comments
           sql`
             SELECT
               'article'                AS type,
@@ -126,6 +137,18 @@ export const getDashboardStats = async (req, res, next) => {
             FROM articles a
             JOIN users u ON a.author_id = u.id
             WHERE a.created_at >= NOW() - INTERVAL '7 days'
+
+            UNION ALL
+
+            SELECT
+              'video_article'               AS type,
+              va.title                     AS description,
+              va.status::TEXT,
+              va.created_at                AS timestamp,
+              u.full_name                  AS actor
+            FROM video_articles va
+            JOIN users u ON va.author_id = u.id
+            WHERE va.created_at >= NOW() - INTERVAL '7 days'
 
             UNION ALL
 
@@ -146,6 +169,7 @@ export const getDashboardStats = async (req, res, next) => {
 
         return {
           articles:        { ...articleStats[0], total_views: viewsTotal[0]?.total_views ?? 0 },
+          videoArticles:   videoStats[0],
           users:           userStats[0],
           pendingComments: parseInt(pendingComments[0].count),
           viewsTrend,
