@@ -47,16 +47,9 @@ const PORT = process.env.PORT || 5000;
 const API  = '/api/v1';
 
 const allowedOrigins = [
-  'http://localhost:3000',
-  'http://localhost:5173',
-  'https://dev.gallitify.tech',
-  'https://gallitify.tech',
-  'https://mangopeoplenews.com',
   'https://www.mangopeoplenews.com',
-  'https://www.beta.mangopeoplenews.com',
-  'https://beta.mangopeoplenews.com',
-  'https://mango-people-news-git-prototype-bhawesh-agrawals-projects.vercel.app',
-  'https://mango-people-news-k7o9xuhym-bhawesh-agrawals-projects.vercel.app',
+  'https://mangopeoplenews.com',
+  'http://localhost:5173'
 ];
 
 app.use(cors({
@@ -67,7 +60,7 @@ app.use(cors({
     return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
