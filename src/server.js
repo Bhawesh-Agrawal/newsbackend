@@ -49,7 +49,8 @@ const API  = '/api/v1';
 const allowedOrigins = [
   'https://www.mangopeoplenews.com',
   'https://mangopeoplenews.com',
-  'http://localhost:5173'
+  'http://localhost:3000',
+  'https://beta.mangopeoplenews.com',
 ];
 
 app.use(cors({
