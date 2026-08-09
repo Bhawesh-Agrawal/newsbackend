@@ -41,7 +41,8 @@ export const createVideoArticleValidator = [
     .withMessage('video_public_id is required for uploaded videos'),
 
   body('video_duration')
-    .optional()
+    .optional({ values: 'falsy' })
+    .toInt()
     .isInt({ min: 1 })
     .withMessage('video_duration must be a positive integer (seconds)'),
 
@@ -64,6 +65,11 @@ export const createVideoArticleValidator = [
     .optional()
     .isISO8601()
     .withMessage('scheduled_at must be a valid date'),
+
+  body('sort_order')
+    .optional()
+    .isInt({ min: 0 })
+    .withMessage('sort_order must be a non-negative integer'),
 ];
 
 export const updateVideoArticleValidator = [
@@ -93,8 +99,19 @@ export const updateVideoArticleValidator = [
     .isIn(['youtube', 'instagram', 'vimeo', 'dailymotion', 'facebook', 'tiktok', 'other'])
     .withMessage('Invalid video provider'),
 
+  body('video_duration')
+    .optional({ values: 'falsy' })
+    .toInt()
+    .isInt({ min: 1 })
+    .withMessage('video_duration must be a positive integer (seconds)'),
+
   body('status')
     .optional()
     .isIn(['draft', 'review', 'published', 'scheduled', 'archived'])
     .withMessage('Invalid status'),
+
+  body('sort_order')
+    .optional()
+    .isInt({ min: 0 })
+    .withMessage('sort_order must be a non-negative integer'),
 ];

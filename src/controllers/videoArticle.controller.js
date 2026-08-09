@@ -76,6 +76,7 @@ export const createVideoArticle = async (req, res, next) => {
       status = 'draft',
       is_featured = false, is_breaking = false,
       scheduled_at, meta_title, meta_description,
+      sort_order = 0,
     } = req.body
 
     const isAuthor  = req.user.role === 'author'
@@ -101,7 +102,7 @@ export const createVideoArticle = async (req, res, next) => {
         status, is_featured, is_breaking,
         reading_time, published_at, scheduled_at,
         meta_title, meta_description,
-        featured_at, breaking_at
+        featured_at, breaking_at, sort_order
       ) VALUES (
         ${title}, ${slug}, ${subtitle || null}, ${body}, ${bodyText}, ${finalExcerpt},
         ${cover_image || null},
@@ -110,7 +111,7 @@ export const createVideoArticle = async (req, res, next) => {
         ${finalStatus}, ${is_featured}, ${is_breaking},
         ${reading_time}, ${publishedAt}, ${scheduled_at || null},
         ${meta_title || title}, ${meta_description || finalExcerpt},
-        ${featuredAt}, ${breakingAt}
+        ${featuredAt}, ${breakingAt}, ${sort_order}
       ) RETURNING id, slug, title, status
     `
 
@@ -243,7 +244,7 @@ export const getVideoArticles = async (req, res, next) => {
           ? sql`AND va.search_vector @@ plainto_tsquery('english', ${search})`
           : sql``
         }
-      ORDER BY va.published_at DESC NULLS LAST, va.created_at DESC
+      ORDER BY va.sort_order ASC, va.published_at DESC NULLS LAST, va.created_at DESC
       LIMIT  ${limit}::int
       OFFSET ${offset}::int
     `
@@ -339,6 +340,7 @@ export const updateVideoArticle = async (req, res, next) => {
       video_type, video_url, video_public_id, video_provider, video_duration,
       status, is_featured, is_breaking,
       scheduled_at, meta_title, meta_description,
+      sort_order,
     } = req.body
 
     const isAuthor    = req.user.role === 'author'
@@ -381,7 +383,8 @@ export const updateVideoArticle = async (req, res, next) => {
         meta_title       = COALESCE(${meta_title       || null}, meta_title),
         meta_description = COALESCE(${meta_description || null}, meta_description),
         reading_time     = ${readingTime},
-        published_at     = ${publishedAt}
+        published_at     = ${publishedAt},
+        sort_order       = COALESCE(${sort_order ?? null}, sort_order)
       WHERE id = ${id}
       RETURNING id, slug, title, status
     `
