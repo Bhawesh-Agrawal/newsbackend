@@ -2,3 +2,6 @@ node_modules/*
 .env
 logs/
 secret.txt
+mpn-service-account.json
+mpn-backend-gsc-key.json
+mpn-analytics-key.json

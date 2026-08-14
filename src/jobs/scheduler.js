@@ -3,6 +3,8 @@ import sql from '../config/database.js';
 import { submitToIndexNow } from '../utils/indexnow.js';
 import { memCache } from '../utils/memCache.js';
 import { scheduleAiProcessing } from '../controllers/articles.controller.js';
+import { aggregateReadingStats, updateSessionJourneys } from './reading-stats.job.js';
+import { cleanExpiredCache } from '../services/openseo.service.js';
 
 // ── Publish scheduled articles ────────────────────────────────────
 // Runs every minute
@@ -94,6 +96,15 @@ export const startScheduler = () => {
 
   // Every hour — '0 * * * *'
   cron.schedule('0 * * * *', expireFeaturedBreaking);
+
+  // Every hour — aggregate reading stats from engagement events
+  cron.schedule('15 * * * *', aggregateReadingStats);
+
+  // Every 30 minutes — update session journeys with time/scroll data
+  cron.schedule('*/30 * * * *', updateSessionJourneys);
+
+  // Every day at 4am — clean expired OpenSEO cache
+  cron.schedule('0 4 * * *', cleanExpiredCache);
 
   console.log('[Scheduler] Background jobs started');
 };
