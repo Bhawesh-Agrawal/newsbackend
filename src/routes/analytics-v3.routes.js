@@ -17,6 +17,11 @@ import {
   getDecayDetection,
 } from '../controllers/insights.controller.js';
 import {
+  submitFeedback,
+  getFeedbackStatus,
+  getFeedbackQuestion,
+} from '../controllers/feedback.controller.js';
+import {
   authenticate,
   isEditor,
   optionalAuth,
@@ -33,6 +38,11 @@ router.get('/engagement/article/:id', authenticate, isEditor, getArticleReadingS
 router.get('/engagement/site', authenticate, isEditor, getSiteEngagement);
 router.get('/engagement/journey', authenticate, isEditor, getSessionJourney);
 router.get('/engagement/post-read/:id', authenticate, isEditor, getPostReadJourney);
+
+// ── Public: User feedback (micro-surveys) ───────────────────────────────────
+router.post('/feedback', engagementLimiter, optionalAuth, submitFeedback);
+router.get('/feedback/status', optionalAuth, getFeedbackStatus);
+router.get('/feedback/question', optionalAuth, getFeedbackQuestion);
 
 // ── Protected: Insights ──────────────────────────────────────────────────────
 router.use(authenticate);
