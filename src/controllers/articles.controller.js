@@ -516,6 +516,45 @@ export const getTrendingArticles = async (req, res, next) => {
   } catch (err) { next(err) }
 }
 
+// ── getTopPicksForCategory ──────────────────────────────────────────────────
+
+export const getTopPicksForCategory = async (req, res, next) => {
+  try {
+    const { categorySlug } = req.params
+    const limit = Math.min(parseInt(req.query.limit ?? '6'), 12)
+    const cacheKey = `topPicks:${categorySlug}:${limit}`
+
+    const articles = await memCache.wrap(
+      cacheKey,
+      () => sql`
+        SELECT
+          ${LIST_COLS},
+          (
+            a.view_count    * 1.0 +
+            a.like_count    * 3.0 +
+            a.comment_count * 2.0
+          ) *
+          CASE
+            WHEN a.published_at >= NOW() - INTERVAL '14 days' THEN 2.0
+            ELSE 1.0
+          END AS pick_score
+        FROM articles a
+        JOIN users      u ON a.author_id   = u.id
+        JOIN categories c ON a.category_id = c.id
+        WHERE a.status       = 'published'
+          AND a.published_at IS NOT NULL
+          AND c.slug         = ${categorySlug}
+        ORDER BY pick_score DESC
+        LIMIT ${limit}
+      `,
+      TTL.TRENDING,
+    )
+
+    res.json({ success: true, data: articles })
+
+  } catch (err) { next(err) }
+}
+
 // ── getRelatedArticles ────────────────────────────────────────────────────────
 
 export const getRelatedArticles = async (req, res, next) => {

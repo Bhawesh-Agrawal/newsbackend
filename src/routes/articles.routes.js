@@ -2,7 +2,8 @@ import { Router } from 'express';
 import {
   createArticle, getArticles, getArticleBySlug,
   getArticleById,
-  updateArticle, deleteArticle, getTrendingArticles, getRelatedArticles
+  updateArticle, deleteArticle, getTrendingArticles, getRelatedArticles,
+  getTopPicksForCategory
 } from '../controllers/articles.controller.js';
 import { toggleLike, getLikeStatus }   from '../controllers/likes.controller.js';
 import { trackView }                   from '../controllers/views.controller.js';
@@ -41,6 +42,7 @@ function setCacheHeaderPublicOnly(maxAge = 60, staleWhileRevalidate = 120) {
 // ── Public routes ─────────────────────────────────────────────────────────────
 router.get('/', setCacheHeaderPublicOnly(60, 120), optionalAuth, getArticles)
 router.get('/trending', setCacheHeader(120, 300), getTrendingArticles);
+router.get('/category/:categorySlug/top-picks', setCacheHeader(120, 300), getTopPicksForCategory);
 
 router.get('/review', authenticate, isSuperAdmin, getReviewQueue)
 
