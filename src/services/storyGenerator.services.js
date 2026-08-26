@@ -1,4 +1,4 @@
-const MODEL = 'meta/llama-3.1-8b-instruct';
+const MODEL = 'meta/llama-3.2-11b-vision-instruct';
 const NVIDIA_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
 
 const BULLET_STRIP = /^[•●▪▸►➢→\-\*]\s*/;
