@@ -70,6 +70,11 @@ export const createVideoArticleValidator = [
     .optional()
     .isInt({ min: 0 })
     .withMessage('sort_order must be a non-negative integer'),
+
+  body('linked_article_id')
+    .optional({ values: 'falsy' })
+    .isUUID()
+    .withMessage('linked_article_id must be a valid UUID'),
 ];
 
 export const updateVideoArticleValidator = [
@@ -114,4 +119,9 @@ export const updateVideoArticleValidator = [
     .optional()
     .isInt({ min: 0 })
     .withMessage('sort_order must be a non-negative integer'),
+
+  body('linked_article_id')
+    .optional({ values: 'falsy' })
+    .isUUID()
+    .withMessage('linked_article_id must be a valid UUID'),
 ];

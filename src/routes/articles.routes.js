@@ -3,7 +3,7 @@ import {
   createArticle, getArticles, getArticleBySlug,
   getArticleById,
   updateArticle, deleteArticle, getTrendingArticles, getRelatedArticles,
-  getTopPicksForCategory
+  getTopPicksForCategory, getLinkedVideos
 } from '../controllers/articles.controller.js';
 import { toggleLike, getLikeStatus }   from '../controllers/likes.controller.js';
 import { trackView }                   from '../controllers/views.controller.js';
@@ -58,6 +58,7 @@ router.patch('/:id/review-action', authenticate, isSuperAdmin, reviewAction)
 // Public slug lookup — published articles only
 router.get('/:slug', setCacheHeader(300, 600), getArticleBySlug);
 router.get('/:id/related', setCacheHeader(300, 600), getRelatedArticles);
+router.get('/:id/linked-videos', setCacheHeader(60, 120), getLinkedVideos);
 
 // ── Mutations ─────────────────────────────────────────────────────────────────
 router.post('/',      authenticate, isAuthor, createArticleValidator, validate, createArticle);

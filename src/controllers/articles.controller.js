@@ -644,3 +644,33 @@ export const getRelatedArticles = async (req, res, next) => {
 
   } catch (err) { next(err) }
 }
+
+// ── getLinkedVideos ─────────────────────────────────────────────────────────
+
+export const getLinkedVideos = async (req, res, next) => {
+  try {
+    const { id } = req.params
+
+    const videos = await sql`
+      SELECT
+        va.id, va.title, va.slug, va.cover_image, va.excerpt,
+        va.video_type, va.video_url, va.video_provider, va.video_duration,
+        va.reading_time, va.view_count, va.like_count, va.comment_count,
+        va.published_at,
+        u.full_name  AS author_name,
+        u.avatar_url AS author_avatar,
+        c.name  AS category_name,
+        c.slug  AS category_slug,
+        c.color AS category_color
+      FROM video_articles va
+      JOIN users      u ON va.author_id   = u.id
+      JOIN categories c ON va.category_id = c.id
+      WHERE va.linked_article_id = ${id}
+        AND va.status = 'published'
+      ORDER BY va.published_at DESC
+    `
+
+    return res.status(200).json({ success: true, data: videos })
+
+  } catch (err) { next(err) }
+}

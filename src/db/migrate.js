@@ -13,6 +13,7 @@ const runMigration = async () => {
 
     const files = [
       '018_user_feedback.sql',
+      '019_video_article_link.sql',
     ];
 
     for (const file of files) {

@@ -17,6 +17,7 @@ const VIDEO_LIST_COLS = sql`
   va.view_count, va.like_count, va.comment_count,
   va.published_at, va.created_at,
   va.ai_summary,
+  va.linked_article_id,
   u.full_name  AS author_name,
   u.avatar_url AS author_avatar,
   c.name  AS category_name,
@@ -77,6 +78,7 @@ export const createVideoArticle = async (req, res, next) => {
       is_featured = false, is_breaking = false,
       scheduled_at, meta_title, meta_description,
       sort_order = 0,
+      linked_article_id,
     } = req.body
 
     const isAuthor  = req.user.role === 'author'
@@ -102,7 +104,8 @@ export const createVideoArticle = async (req, res, next) => {
         status, is_featured, is_breaking,
         reading_time, published_at, scheduled_at,
         meta_title, meta_description,
-        featured_at, breaking_at, sort_order
+        featured_at, breaking_at, sort_order,
+        linked_article_id
       ) VALUES (
         ${title}, ${slug}, ${subtitle || null}, ${body}, ${bodyText}, ${finalExcerpt},
         ${cover_image || null},
@@ -111,7 +114,8 @@ export const createVideoArticle = async (req, res, next) => {
         ${finalStatus}, ${is_featured}, ${is_breaking},
         ${reading_time}, ${publishedAt}, ${scheduled_at || null},
         ${meta_title || title}, ${meta_description || finalExcerpt},
-        ${featuredAt}, ${breakingAt}, ${sort_order}
+        ${featuredAt}, ${breakingAt}, ${sort_order},
+        ${linked_article_id || null}
       ) RETURNING id, slug, title, status
     `
 
@@ -157,6 +161,10 @@ export const getVideoArticleById = async (req, res, next) => {
         c.name  AS category_name,
         c.slug  AS category_slug,
         c.color AS category_color,
+        la.id    AS linked_article_id,
+        la.title AS linked_article_title,
+        la.slug  AS linked_article_slug,
+        la.cover_image AS linked_article_cover,
         COALESCE(
           (SELECT json_agg(json_build_object('id', t.id, 'name', t.name, 'slug', t.slug))
            FROM tags t
@@ -174,6 +182,7 @@ export const getVideoArticleById = async (req, res, next) => {
       FROM video_articles va
       JOIN users      u ON va.author_id   = u.id
       JOIN categories c ON va.category_id = c.id
+      LEFT JOIN articles la ON va.linked_article_id = la.id
       WHERE va.id = ${id}
     `
 
@@ -286,10 +295,15 @@ export const getVideoArticleBySlug = async (req, res, next) => {
           u.linkedin_profile,
           c.name  AS category_name,
           c.slug  AS category_slug,
-          c.color AS category_color
+          c.color AS category_color,
+          la.id    AS linked_article_id,
+          la.title AS linked_article_title,
+          la.slug  AS linked_article_slug,
+          la.cover_image AS linked_article_cover
         FROM video_articles va
         JOIN users      u ON va.author_id   = u.id
         JOIN categories c ON va.category_id = c.id
+        LEFT JOIN articles la ON va.linked_article_id = la.id
         WHERE va.slug = ${slug} AND va.status = 'published'
       `
       if (result.length === 0) return null
@@ -341,6 +355,7 @@ export const updateVideoArticle = async (req, res, next) => {
       status, is_featured, is_breaking,
       scheduled_at, meta_title, meta_description,
       sort_order,
+      linked_article_id,
     } = req.body
 
     const isAuthor    = req.user.role === 'author'
@@ -351,6 +366,17 @@ export const updateVideoArticle = async (req, res, next) => {
     const publishedAt = finalStatus === 'published' && !videoArticle.published_at
       ? new Date()
       : videoArticle.published_at
+
+    const finalLinkedArticleId = linked_article_id !== undefined
+      ? (linked_article_id || null)
+      : (videoArticle.linked_article_id || null)
+
+    const featuredAt = is_featured !== undefined
+      ? (is_featured ? new Date() : null)
+      : videoArticle.featured_at
+    const breakingAt = is_breaking !== undefined
+      ? (is_breaking ? new Date() : null)
+      : videoArticle.breaking_at
 
     const [updated] = await sql`
       UPDATE video_articles SET
@@ -369,22 +395,15 @@ export const updateVideoArticle = async (req, res, next) => {
         status           = COALESCE(${finalStatus      || null}, status),
         is_featured      = COALESCE(${is_featured      ?? null}, is_featured),
         is_breaking      = COALESCE(${is_breaking      ?? null}, is_breaking),
-        featured_at      = CASE
-                            WHEN ${is_featured ?? null} IS NULL THEN featured_at
-                            WHEN ${is_featured ?? null} = TRUE THEN NOW()
-                            ELSE NULL
-                           END,
-        breaking_at      = CASE
-                            WHEN ${is_breaking ?? null} IS NULL THEN breaking_at
-                            WHEN ${is_breaking ?? null} = TRUE THEN NOW()
-                            ELSE NULL
-                           END,
+        featured_at      = ${featuredAt},
+        breaking_at      = ${breakingAt},
         scheduled_at     = COALESCE(${scheduled_at     || null}, scheduled_at),
         meta_title       = COALESCE(${meta_title       || null}, meta_title),
         meta_description = COALESCE(${meta_description || null}, meta_description),
         reading_time     = ${readingTime},
         published_at     = ${publishedAt},
-        sort_order       = COALESCE(${sort_order ?? null}, sort_order)
+        sort_order       = COALESCE(${sort_order ?? null}, sort_order),
+        linked_article_id = ${finalLinkedArticleId}
       WHERE id = ${id}
       RETURNING id, slug, title, status
     `
